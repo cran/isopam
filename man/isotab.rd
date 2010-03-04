@@ -12,7 +12,7 @@ a significant binding to clusters. The lower part is ordered by descending
 overall frequency. The threshold between these two parts can be shifted. 
 }
 \usage{
-isotab(ip, level = 1, phi.min = .5, p.max = .05)
+isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
 }
 \arguments{
   \item{ip}{
@@ -24,7 +24,10 @@ isotab(ip, level = 1, phi.min = .5, p.max = .05)
   \item{phi.min}{
    threshold of \emph{phi} determining which descriptors (species) 
    are listed in the upper part of the table. Applies only to 
-   descriptors passing the criterion defined by \code{p.max}.
+   descriptors passing the criterion defined by \code{p.max}. If
+   \code{phi.min = 'auto'} (the default) isotab suggests a 
+   suitable value based on the numbers of clusters, observations, 
+   and descriptors.
 }  
   \item{p.max}{
    threshold of Fisher's \emph{p} determining which descriptors 
@@ -38,6 +41,7 @@ isotab(ip, level = 1, phi.min = .5, p.max = .05)
    \enc{Chitrý}{Chitry} et al. 2002.  
 }
 \value{
+   \item{thresholds}{\code{phi.min} and \code{p.max} used.} 
    \item{n}{matrix with cluster sizes.}
    \item{tab}{Data frame with ordered frequencies and their significance. 
    The latter is derived from Fisher's exact test (\emph{p} <= 0.05: *, 

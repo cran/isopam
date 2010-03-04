@@ -158,7 +158,8 @@
        the default method.
      }
      \author{
-       Sebastian Schmidtlein with contributions from Jason Collison.        
+       Sebastian Schmidtlein with contributions from Jason Collison and 
+       Lubomir \enc{Tichý}{Tichy}        
        }	
      \seealso{
        \code{\link{isotab}} for a table of descriptor (species) 

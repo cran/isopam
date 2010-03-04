@@ -1,5 +1,5 @@
 isotab <-
-function (ip, level = 1, phi.min = .5, p.max = .05)
+function (ip, level = 1, phi.min = "auto", p.max = .05)
 { 
   IO <- ip$dat
   IO [IO > 0] <- 1 
@@ -87,14 +87,19 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   rownames (tab) <- rnam
   nc <- ncol(tab)
   
-  ## 2) Frequency table
+  ## 2) Calculate phi.min threshold
+  if (phi.min == "auto") 
+    phi.min <- round (0.483709 + nc * -0.003272 + N * -0.000489 + 
+      SP * 0.000384 + sqrt (nc) * -0.01475, 2)   
+  
+  ## 3) Frequency table
   if (is.null (ip$hier)) siz <- table (ip$flat) ## Cluster sizes
   else siz <- table (ip$hier [,level]) ## Cluster sizes
   spc <- t (as.matrix (siz))[rep (1, nrow (tab)),]
   frq.2 <- tab / spc ## Frequency
   frq.2 <- round (frq.2 * 100, 0) ## as percentage
   
-  ## 3) Fisher's significance table  
+  ## 4) Fisher's significance table  
   ft <- tab
   for (fsp in 1:SP)         ## fsp-loop through species
   {                    
@@ -106,7 +111,7 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
       Nj <- siz [fcl]
       insd <- tab [fsp, fcl]
       absci <- Nj - insd
-      outs <- spec_frq - insd                   ## occ. outside
+      outs <- spec_frq - insd              ## occ. outside
       absco <- N - Nj - outs               ## abs. outside
       
       fshm <- matrix (c(insd, absci, outs, absco), 2, 2)    
@@ -114,21 +119,21 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
     }
   }      
 
-  ## 4) Significance symbols
+  ## 5) Significance symbols
   ft.symb <- ft
   ft.symb [ft > 0.05] <- ""
   ft.symb [ft <= 0.05] <- "*"
   ft.symb [ft <= 0.01] <- "**"
   ft.symb [ft <= 0.001] <- "***"
 
-  ## 5) Combined frequency table with significance symbols 
+  ## 6) Combined frequency table with significance symbols 
   frq.ft <- matrix (paste (frq.2, ft.symb, sep = ""), 
       nrow(frq.2), ncol(frq.2))
   frq.ft <- data.frame (frq.ft)
   colnames (frq.ft) <- colnames (ft.symb)
   rownames (frq.ft) <- rownames (ft.symb)
 
-  ## 6) Standardized phi table 
+  ## 7) Standardized phi table 
   S <- 1 / nc                                   ## Constant s (Tichy '06)
   cs <- S * N                                   ## new cluster sizes
   phi <- tab
@@ -151,7 +156,7 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   phi [is.na (phi)] <- 0                        ## Replace NaN-values by 0
 
   ## Table sorting     
-  ## 7) .... by phi and frequency
+  ## 8) .... by phi and frequency
   phi.idx <- apply (phi, 1, which.max) ## Group affiliation by phi 
   frq.ord <- phi.idx  
   for (i in 1:length(frq.ord)) frq.ord [i] <- frq.2 [i, phi.idx [i]] 
@@ -161,7 +166,7 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   ft <- ft [ord.top,]
   phi <- phi [ord.top,]
 
-  ## 8) Filter diagnostic species
+  ## 9) Filter diagnostic species
   filter1 <- apply (ft, 1, min) <= p.max                                          
   filter2 <- apply (phi, 1, max) >= phi.min
   dia <- which (filter1 [filter2 == TRUE] == TRUE) ## diagnostic species 
@@ -169,11 +174,11 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   if (n.dia == 0) diag <- "No diagnostic species with given thresholds." 
   if (n.dia > 0) diag <- frq.ft.top [names (dia),]
 
-  ## 9) For later use in the bottom part of the tables
+  ## 10) For later use in the bottom part of the tables
   ord.bot <- names (t (frq) [order (-frq),])
   frq.ft.b <- frq.ft [ord.bot,]
 
-  ## 10) Move diagnostic species to top
+  ## 11) Move diagnostic species to top
   if (n.dia > 0) 
   {
     FRQ <- rbind (diag, frq.ft.b [rownames (frq.ft.b) %in% 
@@ -181,12 +186,17 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   }
   else FRQ <- frq.ft.b
   
-  ## 11) Report cluster sizes
+  ## 12) Report cluster sizes
   siz <- t (as.matrix (siz))
   rownames (siz) <- "n"
   
-  ## 12) Output
+  ## 13) Parameters
+  param <- c(phi.min, p.max)
+  names (param) <- c("phi.min", "p.max")
+
+  ## 14) Output
   isotab.out <- list (
+   thresholds = param,   
    n = siz,
    tab = FRQ)
   
