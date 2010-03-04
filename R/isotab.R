@@ -25,6 +25,59 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
     tab <- t (aggregate (IO, by = list (ip$hier [,level]), FUN = sum))
   }
   
+  ## Fisher's exact test for 2x2 tables
+  fshtest <- function (x)
+  {
+    PVAL <- NULL
+    m <- sum(x[, 1])
+    n <- sum(x[, 2])
+    k <- sum(x[1, ])
+    x <- x[1, 1]
+    lo <- max(0, k - n)
+    hi <- min(k, m)
+    support <- lo:hi
+    logdc <- dhyper (support, m, n, k, log = TRUE)
+
+    dnhyper <- function(ncp)
+    {
+      d <- logdc + log(ncp) * support
+      d <- exp(d - max(d))
+      d / sum(d)
+    }
+
+    pnhyper <- function(q, ncp = 1, upper.tail = FALSE)
+    {
+      if (ncp == 1)
+      {
+          if (upper.tail)
+            return(phyper(x - 1, m, n, k, lower.tail = FALSE))
+          else return(phyper(x, m, n, k))
+      }
+      if (ncp == 0)
+      {
+          if (upper.tail)
+            return(as.numeric(q <= lo))
+          else return(as.numeric(q >= lo))
+      }
+      if (ncp == Inf)
+      {
+          if (upper.tail)
+            return(as.numeric(q <= hi))
+          else return(as.numeric(q >= hi))
+      }
+      d <- dnhyper(ncp)
+      if (upper.tail)
+          sum(d[support >= q])
+      else sum(d[support <= q])
+    }
+    PVAL <- switch ("two.sided", less = pnhyper(x, 1), greater = pnhyper (x, 1,
+        upper.tail = TRUE), two.sided = {
+          relErr <- 1 + 10^(-7)
+          d <- dnhyper(1)
+          sum(d [d <= d [x - lo + 1] * relErr])})
+    return (PVAL)
+  }
+ 
   ## 1) Contingency table  
   cnam <- tab [1,]
   tab <- tab [-1,]
@@ -40,24 +93,26 @@ function (ip, level = 1, phi.min = .5, p.max = .05)
   spc <- t (as.matrix (siz))[rep (1, nrow (tab)),]
   frq.2 <- tab / spc ## Frequency
   frq.2 <- round (frq.2 * 100, 0) ## as percentage
-
-  ## 3) Fisher's significance table
+  
+  ## 3) Fisher's significance table  
   ft <- tab
-  for (u in 1:SP) 
-  {
-    for (v in 1:nc) 
-    {
-      insd <- tab [u, v]
-      outs <- tab [u,-v]
-      x2 <- matrix (c(
-              insd,                        ## a occ. of species in cluster v
-              siz [v] - insd,              ## c abs. in cluster v
-              sum (outs),                  ## b occ. outside cluster v
-              sum (siz [-v]) - sum (outs)  ## d abs. outside v
-              ), 2, 2)    
-      ft [u,v] <- fisher.test (x2)$p.value
+  for (fsp in 1:SP)         ## fsp-loop through species
+  {                    
+    spec_frq <- frq [fsp]
+    spec_io <- IO [,fsp]
+    
+    for (fcl in 1:nc)       ## fcl-loop through clusters
+    {                  
+      Nj <- siz [fcl]
+      insd <- tab [fsp, fcl]
+      absci <- Nj - insd
+      outs <- spec_frq - insd                   ## occ. outside
+      absco <- N - Nj - outs               ## abs. outside
+      
+      fshm <- matrix (c(insd, absci, outs, absco), 2, 2)    
+      ft [fsp,fcl] <- fshtest (fshm)        
     }
-  }
+  }      
 
   ## 4) Significance symbols
   ft.symb <- ft

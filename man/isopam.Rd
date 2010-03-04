@@ -4,19 +4,20 @@
      \alias{isopam}
      \alias{plot.isopam}
      \alias{identify.isopam}
-     \title{Isopam (Hierarchical Clustering)}
+     \title{Isopam (Clustering)}
      \description{
-       Performs Isopam which consists of dimensionality reduction
-       and partitioning of the resulting feature space. Optimizes 
-       clusters and cluster numbers for maximum performance of 
-       group indicators. Developed for matrices representing 
-       species abundances in plots.        
+       Isopam classification is performed either as a 
+       hierarchical, divisive method, or as non-hierarchical 
+       partitioning. Optimizes clusters and optionally cluster 
+       numbers for maximum performance of group indicators. 
+       Developed for matrices representing species abundances 
+       in plots.        
      }
      \usage{
-     isopam(dat, c.num = FALSE, c.max = 10, filtered = TRUE, 
-             distance = 'bray', g.min = 3.5, k.max = 100, 
-             stopcrit = c(2,7), maxlev = FALSE,
-             juice = FALSE) 
+     isopam (dat, max.level = FALSE, fixed.number = FALSE, 
+            opt.number = TRUE, max.number = 6, stopat = c(1,7), 
+            filtered = TRUE, thresh = 3.5, distance = 'bray', 
+            k.max = 100, juice = FALSE) 
      
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
@@ -26,35 +27,45 @@
          object (typically a plot), each column corresponds 
          to a descriptor (typically a species). All variables must 
          be numeric. Missing values (NAs) are not allowed. At least
-         4 rows (plots) are required.}
-       \item{c.num}{number of clusters to be computed. If \code{FALSE}
-         (the default), cluster numbers are optimized in the range
-         between 2 and c.max. If a number is given, non-hierarchical 
-         partitioning is performed (\code{maxlev = 1}).}
-       \item{c.max}{maximum number of clusters per partition.}
+         3 rows (plots) are required.}
+       \item{max.level}{maximum number of hierarchy levels. Defaults 
+         to \code{FALSE} (no maximum number). Note that divisions
+         may stop well before this number is reached (see 
+         \code{stopat}). Use \code{max.level = 1} for non-hierarchical 
+         partitioning (or use \code{fixed.number}).}
+       \item{fixed.number}{number of clusters (defaults to \code{FALSE}). 
+         If a number is given, non-hierarchical partitioning is performed, 
+         \code{opt.number} and \code{max.number} are ignored and 
+         \code{max.level} is set to one.}
+       \item{opt.number}{if \code{TRUE} (the default) cluster 
+         numbers are optimized in the range between 2 and 
+         \code{max.number} (slow and thorough). If \code{FALSE} 
+         groups are divided into two subgroups (quick and dirty).}
+       \item{max.number}{maximum number of clusters per partition.
+         Applies to all partitioning steps if 
+         \code{opt.number = TRUE}.}
+       \item{stopat}{vector with stopping rules for hierarchical
+         clustering. Two values define if a partition should be 
+         retained in hierarchical clustering: the first determines 
+         how many indicators must be present per cluster, the second 
+         defines the standardized G-value that must be reached by 
+         these indicators. \code{stopat} is not effective at the first 
+         hierarchy level or in non-hierarchical partitioning.}                                      
+       \item{filtered}{logical. If \code{TRUE} (the deafult), only 
+         descriptors (species) exceeding a threshold defined by 
+         \code{thresh} are used in the search for a good clustering 
+         solution. Their number is multiplied with their mean 
+         standardized G-value. The product is used as optimality 
+         criterion. If \code{FALSE} all descriptors are used for 
+         optimization.}
+       \item{thresh}{threshold (standardized G value) for descriptors 
+         (species) to be considered in the search for a good 
+         clustering solution. Effective with \code{filtered = TRUE}.}
        \item{distance}{distance measure for the distance matrix
          used as a starting point for Isomap. All but the 
          Bray-Curtis and the Jaccard measure are passed to the 
          \code{method} argument in package \pkg{proxy} (see details).} 
-       \item{filtered}{logical. If \code{TRUE}, only descriptors 
-         (species) exceeding a standardized G-value of g.min are 
-         used in the search for the best partition. Their number 
-         is multiplied with their mean standardized G-value and 
-         the product is used as optimization criterion.}
-       \item{g.min}{threshold for descriptors (species) to be 
-         considered as indicators during clustering (standardized 
-         G-value). Effective with (default) option 
-         \code{filtered = TRUE}.}
        \item{k.max}{maximum Isomap \emph{k}.}
-       \item{stopcrit}{vector with stopping rules for hierarchical
-         clustering. Two values define if a partition should be 
-         retained: the first determines how many indicators must be 
-         present, the second defines the standardized G-value that 
-         must be reached by these indicators. \code{stopcrit} is not 
-         used at the first hierarchy level or in non-hierarchical 
-         partitioning.}                                      
-       \item{maxlev}{maximum number of hierarchy levels. Defaults to
-         \code{FALSE} (no maximum number).}
        \item{juice}{logical. If \code{TRUE} input files for Juice are
          generated.}
        \item{x}{an \code{isopam} result object.}
@@ -76,7 +87,7 @@
          parent cluster (0 in case of the first partition), the
          number of subgroups, Isomap dimensions, Isomap \emph{k} 
          used, and the number of indicators reaching or exceeding 
-         \code{g.min}.} 
+         \code{thresh}.} 
        \item{dendro}{an object of class \code{hclust} representing
          the clustering. Not present with only one level of 
          partitioning.}  
@@ -88,27 +99,17 @@
        et al. 2000; \code{isomap} in package \pkg{vegan}) and 
        partitioning of the resulting ordination space (PAM: Kaufman 
        & Rousseeuw 1990; \code{pam} in package \pkg{cluster}). 
-       Compared to other hierarchical clustering methods, it has 
-       the following features: (a) it optimizes partitions for 
-       the performance of group indicators (typically species); 
-       (b) in this process it selects the number of clusters per 
-       division; (c) the shapes of groups in feature space are 
-       not limited to spherical or other geometric shapes (thanks 
-       to the underlying Isomap algorithm) and (d) the distance 
-       measure used for the initial distance matrix can be freely 
-       defined. 
+       The classification is performed either as a hierarchical, 
+       divisive method, or as non-hierarchical partitioning.  
+       Compared to other clustering methods, it has the following 
+       features: (a) it optimizes partitions for the performance of 
+       group indicators (typically species); (b) it optionally 
+       selects the number of clusters per division; (c) the shapes 
+       of groups in feature space are not limited to spherical or 
+       other regular geometric shapes (thanks to the underlying Isomap 
+       algorithm) and (d) the distance measure used for the initial 
+       distance matrix can be freely defined. 
        
-       In order to examine frequencies of descriptors (species) 
-       for an Isopam clustering solution use \link{isotab}. 
-                   
-       The included dimensionality reduction is not suitable for 
-       very small data sets. Therefore, tables or groups with few 
-       rows (plots) or columns (species) are not partitioned. 
-       For division, a group must consist of at least three 
-       members and the partition must be supported by at least
-       \code{stopcrit [1]} descriptors (species) reaching a 
-       standardized G-value of \code{stopcrit [2]}.
-                                           
        Currently, the \code{plot} and \code{identify} methods 
        for class \code{isopam} simply link to the 
        \link[stats]{hclust} object \code{$dendro} resulting 
@@ -144,19 +145,24 @@
        \emph{Science} \bold{290}, 2319--2323.        
      }
      \note{
-       For large datasets, Isopam may need too much memory (consider using
-       \link{isopam.2}) or too much computation time. The optimization 
-       procedure (selection of Isomap dimensions and -\emph{k}, selection 
-       of cluster numbers) is based on a brute force approach that takes its 
-       time with large data sets. Low speed is inherent to the method, so 
-       don't complain. If used with data not representing species in plots 
-       make sure that the indicator approach is appropriate.
+       For large datasets, Isopam may need too much memory or too much 
+       computation time. The optimization procedure (selection 
+       of Isomap dimensions and -\emph{k}, optionally selection of cluster 
+       numbers) is based on a brute force approach that takes its time 
+       with large data sets. Low speed is inherent to the method, so don't 
+       complain. If used with data not representing species in plots make 
+       sure that the indicator approach is appropriate.
+       
+       With very small datasets, the indicator based optimization may fail. 
+       In such cases consider using \code{filtered = FALSE} instead of 
+       the default method.
      }
      \author{
        Sebastian Schmidtlein with contributions from Jason Collison.        
        }	
      \seealso{
-       \code{\link{isotab}}, \code{\link{isopam.2}}
+       \code{\link{isotab}} for a table of descriptor (species) 
+       frequency in clusters.
      }
      \examples{
      ## load data to the current environment
@@ -168,8 +174,14 @@
      ## examine cluster hierarchy
      plot(ip)
      
-     ## examine frequency table (second 
-     ## hierarchy level)
+     ## examine grouping
+     ip$flat 
+
+     ## examine frequency table (second hierarchy level)
      isotab(ip, 2)
+     
+     ## non-hierarchical partitioning
+     ip<-isopam(andechs,fixed.number=3)
+     ip$flat 
      }
      \keyword{ cluster }

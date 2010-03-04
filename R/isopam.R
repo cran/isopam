@@ -1,16 +1,16 @@
 isopam <-
-function (dat, c.num = FALSE, c.max = 10, filtered = TRUE, 
-          distance = 'bray', g.min = 3.5, k.max = 100, 
-          stopcrit = c(2,7), maxlev = FALSE,
-          juice = FALSE)
+  function (dat, max.level = FALSE, fixed.number = FALSE, 
+            opt.number = TRUE, max.number = 6, stopat = c(1,7), 
+            filtered = TRUE, thresh = 3.5, distance = 'bray', 
+            k.max = 100, juice = FALSE) 
 {
-  require (vegan) || stop ("needs package vegan")
-  require (cluster) || stop ("needs package cluster")
-  if (distance != "bray" & distance != "jaccard") 
-    require (proxy) || stop ("needs package proxy")  
+  require (vegan) || stop ('needs package vegan')
+  require (cluster) || stop ('needs package cluster')
+  if (distance != 'bray' & distance != 'jaccard') 
+    require (proxy) || stop ('needs package proxy')  
 
   ## Create directory for juice output
-  if (juice == TRUE) dir.create ("isopam", showWarnings = FALSE)
+  if (juice == TRUE) dir.create ('isopam', showWarnings = FALSE)
   
   ## Add Sample names if necessary
   if (is.null (rownames (dat)) == TRUE) 
@@ -36,9 +36,19 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
   ## Initiate count
   count <- 1
   
-  ## Set maxlev == 1 if c.num is a number
-  if (is.numeric (c.num)) maxlev <- 1
+  ## Default minimum cluster number
+  c.min <- 2
   
+  if (is.numeric (fixed.number))
+  {  
+    opt.number <- FALSE
+    max.level <- 1
+    if (fixed.number < 2) stop ('fixed.number < 2')
+    if (fixed.number > nrow (dat) - 1) fixed.number <- nrow (dat) - 1
+    c.min <- fixed.number
+    c.max <- fixed.number
+  }
+
   ## ----------- core function ---------------------------------------------- ##
 
   core <- function (xdat) 
@@ -54,19 +64,19 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
 
     ## Distance matrix
     ## ... using vegan
-    if (distance == "bray") dst.xdat <- vegdist (xdat, "bray")     
-    if (distance == "jaccard") dst.xdat <- vegdist (xdat, "jaccard")
+    if (distance == 'bray') dst.xdat <- vegdist (xdat, 'bray')     
+    if (distance == 'jaccard') dst.xdat <- vegdist (xdat, 'jaccard')
     ## ... using proxy
-    if (distance != "bray" & distance != "jaccard")    
+    if (distance != 'bray' & distance != 'jaccard')    
       dst.xdat <- dist (xdat, method = distance) 
     
-    ## Exit with dignity if N.xdat < 3 (applies to the first hierarchy level)
-    if (N.xdat < 3)                                                      ## <-----
+    ## Exit with dignity if N.xdat < 3
+    if (N.xdat < 3)                                                      
     {
-      mess1 <- "Not enough data."
+      mess1 <- 'Not enough data.'
       if (juice == TRUE) 
       {
-      write.table (mess1, "isopam/alert.txt", row.names = FALSE, 
+      write.table (mess1, 'isopam/alert.txt', row.names = FALSE, 
         col.names = FALSE, quote = FALSE)
       }
       stop (mess1)
@@ -101,29 +111,23 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
     if (N.xdat < 11) d.max <- N.xdat - 1
     else d.max <- 10
     
-    ## Set c.min
-    c.min <- 2
-    
     ## Adjust c.max if necessary
-    if (c.max > N.xdat - 1) c.max <- N.xdat - 1
-    if (c.max < 2) stop ("c.max < 2")
-    
-    ## Adjust c.num if necessary
-    if (is.numeric (c.num))
+  
+    if (opt.number == TRUE)  
     {
-      if (c.num < 2) stop ("c.num< 2")
-      if (c.num > N.xdat - 1) c.num <- N.xdat - 1
-      c.min <- c.num
-      c.max <- c.num
-    }  
-    
+      if (max.number > N.xdat - 1) max.number <- N.xdat - 1
+      if (max.number < 2) stop ('max.number < 2')
+      c.max <- max.number
+    }    
+    if (opt.number == FALSE && !is.numeric (fixed.number)) c.max <- 2    
+            
     ## Prepare progress bar
     b.loops <- (k.max - k.min) + 1
     d.loops <- d.max - 1
-    pb.mx <- (b.loops * d.loops) - 1
-    pb <- txtProgressBar (min = 0, max = pb.mx, char = ".",
+    pb.mx <- (b.loops * d.loops)
+    pb <- txtProgressBar (min = 0, max = pb.mx, char = '.',
       width = 45, style = 3)
-
+    
     ## Prepare output array
     out.array <- array (NA, dim = c(10, k.max, c.max))
 
@@ -133,12 +137,16 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
     
     try (DDD_lookup_table <- 
       array (NA_real_, c(N.xdat, N.xdat+1, N.xdat+1)), silent = TRUE)    
-    if (!exists ("DDD_lookup_table")) 
-      stop ("Memory issues - use isopam.2 for large matrices")    
-    
+    underdrive <- FALSE
+    if (!exists ('DDD_lookup_table')) 
+    {
+      print ('Memory issues - shifting to low gear', quote = FALSE)    
+      underdrive <- TRUE
+    }
+      
     ## Using a matrix of logical values is a _hair_ faster inside the loop
     IO.xdat.logical <- IO.xdat != 0
-
+    
     ## ----------- Begin with the big loops .... ---------------------------- ##
 
     for (b in c(k.min:k.max))  ## b-loop: Isomap k
@@ -150,7 +158,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       {
 
         isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
-          "euclidean", stand = TRUE))
+          'euclidean', stand = TRUE))
 
         for (e in c.min:c.max) ## e-loop: Cluster no.
         {                      
@@ -160,113 +168,173 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
           cl <- cl.iso$clustering                     ## Group affiliation
           ci <- cl.iso$clusinfo[,1]                   ## Cluster size
 
-          ## ---------- Standardized G-test ---------------------------------- #
+          ############# method = G, fast mode ##################################
 
-          ## For Williams' correction
-          w1 <- N.xdat * sum (1 / ci) - 1 
-          w2 <- 6 * N.xdat * (e - 1)
-          
-          ## Compute G-values for all species (code adapted from Lubomir Tichy)
-          ## This is a G-test of association
-          
-          gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
-
-          for (g1 in 1:SP.xdat)         ## g1-loop through species
-          {                    
-            DDD <- 0
-            spec_frq <- frq.xdat [g1]
-
+          if (underdrive == FALSE)
+          {
             ## For Williams' correction
-            willi <- 1 + ((w1 * w3 [g1]) / w2)
+            w1 <- N.xdat * sum (1 / ci) - 1 
+            w2 <- 6 * N.xdat * (e - 1)
             
-            ## Mask out entries in cl using appropriate col in IO.xdat
-            groupids <- cl[IO.xdat.logical[,g1]]; 
-
-            for (g.fast in 1:e)             ## g.fast-loop through clusters
-            {                  
-              fra1 <- sum (groupids == g.fast)   ## Species occ. in cluster
-              Nj <- ci [g.fast]                  ## Cluster size
-
-              ## Have we calculated this before?
-              DDDadd <- DDD_lookup_table [spec_frq, Nj+1, fra1+1]
-
-              if (!is.na(DDDadd))
-              {
-              ## Already existed in the lookup table; use it.
-              ## This is almost always the case percentage-wise
-                DDD <- DDD + DDDadd
+            ## Compute G-values for species (code adapted from Lubomir Tichy)
+            
+            gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+  
+            for (g1 in 1:SP.xdat)         ## g1-loop through species
+            {                    
+              DDD <- 0
+              spec_frq <- frq.xdat [g1]
+  
+              ## For Williams' correction
+              willi <- 1 + ((w1 * w3 [g1]) / w2)
+              
+              ## Mask out entries in cl using appropriate col in IO.xdat
+              groupids <- cl[IO.xdat.logical[,g1]]
+               
+              for (g.fast in 1:e)             ## g.fast-loop through clusters
+              {                  
+                fra1 <- sum (groupids == g.fast)   ## Species occ. in cluster
+                Nj <- ci [g.fast]                  ## Cluster size
+  
+                ## Have we calculated this before?
+                DDDadd <- DDD_lookup_table [spec_frq, Nj+1, fra1+1]
+  
+                if (!is.na(DDDadd))
+                {
+                ## Already existed in the lookup table; use it.
+                  DDD <- DDD + DDDadd
+                }
+                else
+                {
+                  ## so need to calculate it ...
+                  bom <- spec_frq / N.xdat 
+                  bim <- 1 - bom           
+                  fra0 <- Nj - fra1        
+                  bum <- fra1 / (Nj * bom)  
+                  bam <- fra0 / (Nj * bim) 
+                  DDDadd <- 0
+                  if (!is.na (bum)) 
+                    if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum)) 
+                  if (!is.na (bam)) 
+                    if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))             
+                  DDD <- DDD + DDDadd
+                  ## ... and store for next time
+                  DDD_lookup_table [spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                }
               }
-              else
-              {
-                ## so need to calculate it and store for later.
-                ## This does not get executed very often at all.
+              DDD <- DDD * 2
+              gt [g1,] <- DDD / willi ## Williams' correction
+            }
+  
+            ## Standardization (Botta-Dukat et al. 2005)
+            gt.ex <- e - 1                 ## Expected G
+            gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+            G <- (gt - gt.ex) / gt.sd
+            
+            ## Averaging
+            if (filtered == FALSE) out.array [d,b,e] <- mean (G)
+            
+            ## Standard: Filtering and averaging
+            if (filtered == TRUE) 
+            {
+              ## Filtering by G
+              glgth <- length (G [G >= thresh]) 
+              if (glgth == 0) out.array [d,b,e] <- NA
+  
+              ## Averaging
+              else out.array [d,b,e] <- mean (G [G >= thresh]) * glgth
+            }
+          }
 
+          ############# method G, slow mode ####################################
+
+          if (underdrive == TRUE)
+          {
+            ## For Williams' correction
+            w1 <- N.xdat * sum (1 / ci) - 1 
+            w2 <- 6 * N.xdat * (e - 1)
+            
+            ## Compute G-values for species (code adapted from Lubomir Tichy)
+            
+            gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+  
+            for (g1 in 1:SP.xdat)         ## g1-loop through species
+            {                    
+              DDD <- 0
+              spec_frq <- frq.xdat [g1]
+  
+              ## For Williams' correction
+              willi <- 1 + ((w1 * w3 [g1]) / w2)
+              
+              ## Mask out entries in cl using appropriate col in IO.xdat
+              groupids <- cl[IO.xdat.logical[,g1]]; 
+  
+              for (g.slow in 1:e)             ## g.slow-loop through clusters
+              {                  
+                fra1 <- sum (groupids == g.slow)   ## Species occ. in cluster
+                Nj <- ci [g.slow]                  ## Cluster size
                 bom <- spec_frq / N.xdat 
                 bim <- 1 - bom           
                 fra0 <- Nj - fra1        
                 bum <- fra1 / (Nj * bom)  
                 bam <- fra0 / (Nj * bim) 
                 DDDadd <- 0
-                
                 if (!is.na (bum)) 
                   if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum)) 
-                
                 if (!is.na (bam)) 
                   if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))             
-                
                 DDD <- DDD + DDDadd
-              
-                ## And store for next time
-                DDD_lookup_table [spec_frq, Nj + 1, fra1 + 1] <- DDDadd
               }
+              DDD <- DDD * 2
+              gt [g1,] <- DDD / willi ## Williams' correction
             }
-            DDD <- DDD * 2
-            gt [g1,] <- DDD / willi ## Williams' correction
-          }
-
-          ## Standardization (Botta-Dukat et al. 2005)
-          gt.ex <- e - 1                 ## Expected G
-          gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
-          G <- (gt - gt.ex) / gt.sd
-          
-          ## ----------------------------------------------------------------- #
-          
-          ## Averaging
-          if (filtered == FALSE) out.array [d,b,e] <- mean (G)
-          
-          ## Standard: Filtering and averaging
-          if (filtered == TRUE) 
-          {
-            ## Filtering by G
-            glgth <- length (G [G >= g.min]) 
-            if (glgth == 0) out.array [d,b,e] <- NA
-
+  
+            ## Standardization (Botta-Dukat et al. 2005)
+            gt.ex <- e - 1                 ## Expected G
+            gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+            G <- (gt - gt.ex) / gt.sd
+            
             ## Averaging
-            else out.array [d,b,e] <- mean (G [G >= g.min]) * glgth
+            if (filtered == FALSE) out.array [d,b,e] <- mean (G)
+            
+            ## Standard: Filtering and averaging
+            if (filtered == TRUE) 
+            {
+              ## Filtering by G
+              glgth <- length (G [G >= thresh]) 
+              if (glgth == 0) out.array [d,b,e] <- NA
+  
+              ## Averaging
+              else out.array [d,b,e] <- mean (G [G >= thresh]) * glgth
+            }
           }
+          
+          ######################################################################
+
         }
         setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
       }
     }
-
+    
     close (pb) ## Close progress bar
 
     ## ----------- End parameter search ------------------------------------- ##
     
     solution <- TRUE
     out.array [is.na (out.array)] <- 0
-    if (sum (out.array) <= 0) 
+    
+    if (length (out.array [out.array > 0]) == 0) 
     { 
-      mess2 <- "No solution found with current settings"
+      mess2 <- 'No solution found with current settings'
       
       if (count == 1) 
       {
         if (juice == TRUE) 
         {
-          write.table (mess2, "isopam/alert.txt",
+          write.table (mess2, 'isopam/alert.txt',
             row.names = FALSE, col.names = FALSE, quote = FALSE)
         }
-        stop ("No solution found with current settings")
+        stop ('No solution found with current settings')
       }
       else solution <- FALSE
     }  
@@ -278,7 +346,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       ## ----------- Parameters for final run ------------------------------- ##
 
       wmx.iso <- which (out.array == mn.iso, arr.ind = TRUE) ## Cases with max
-      colnames (wmx.iso) <- c("iso.dim", "iso.k", "clusters")
+      colnames (wmx.iso) <- c('iso.dim', 'iso.k', 'clusters')
       
       ## In case of multiple best solutions select the one with max clusters, 
       ## max dims and max k (in this rank order)
@@ -296,28 +364,29 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       mc <- wmx.iso [3]; md <- wmx.iso [1]; mk <- wmx.iso [2]
   
       ## ----------- Final run ---------------------------------------------- ##
-
       suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))          
-      d.iso <- daisy (isom$points[,1:md], metric = "euclidean", stand = TRUE)
+      d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
       cl.iso <- pam (d.iso, k = mc, diss = TRUE)
 
       CLS <- cl.iso$clustering                 ## Group affiliation
       MDS <- cl.iso$medoids                    ## Medoids
       CLI <- t (cl.iso$clusinfo [,1])          ## Cluster size
-      ISO <- isom$points [,1:3]                ## Isomap scores    
+
+      ############# method == G ################################################
 
       ## Contingency table
       tab <- t (aggregate (IO.xdat, by = list (CLS), FUN = sum)[,-1]) 
-  
       ## Frequency table
       inf <- matrix (rep (CLI, SP.xdat), nrow = SP.xdat, byrow = TRUE)
       FRQ <- tab / inf 
   
-      ## G-statistics
+      ## Prepare Williams' correction
       w1 <- N.xdat * sum (1 / CLI) - 1 
       w2 <- 6 * N.xdat * (mc - 1)
 
+      ## Matrix for results
       g.1 <- matrix (NA, SP.xdat, 1)  
+
       for (g3 in 1:SP.xdat)           
       {                             
         willi <- 1 + ((w1 * w3 [g3]) / w2)
@@ -349,26 +418,27 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       gt.sd <- sqrt (2 * (mc - 1))           ## Expected sd
       sG <- (g.1 - gt.ex) / gt.sd
            
-      ## Number of indicators >= g.min
-      noi <- length (sG [sG >= g.min])      
+      ## Number of indicators >= thresh
+      noi <- length (sG [sG >= thresh])      
      
       ## Was this a good partition? 
       ## At least stopcrit [1] descriptors with g >= stopcrit [2]
-      if (length (sG [sG >= stopcrit [2]]) >= stopcrit [1]) fine <- TRUE                        
-      else fine <- FALSE
+
+      if (length (sG [sG >= stopat [2]]) >= stopat [1] * mc) fine <- TRUE                        
+      else fine <- FALSE      
+      
+      ##########################################################################      
       
       out <- list (
         medoids = MDS, 
         clusters = CLS,
         sizes = CLI,
         is.ok = fine,
-        scores = ISO, 
         k.min = k.min,
         k.max = k.max,
         k = mk,
         d = md,
-        noi = noi
-        )
+        noi = noi )
     }
     else 
     {    
@@ -378,15 +448,12 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
         clusters = NULL,
         sizes = NULL,
         is.ok = FALSE,
-        scores = NULL, 
         k.min = NULL,
         k.max = NULL,
         k = NULL,
         d = NULL,
-        noi = NULL
-     )
+        noi = NULL )
     }
-
     return (out)
   }  
   
@@ -396,7 +463,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
   {
     ## Expects a list of vectors containing cluster affiliations
     ## without info about hierarchy (running number).
-    ## Returns an object of class "hclust"
+    ## Returns an object of class 'hclust'
   
     num_obs <- length(clust[[1]])
   
@@ -408,7 +475,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       method=NULL,
       call=NULL);
   
-    class(dendro) <- "hclust"
+    class(dendro) <- 'hclust'
   
   
     ## hclust requires a set of merge operations, one observation at a time.
@@ -561,33 +628,33 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
 
   ## ------------ Isopam call ----------------------------------------------- ##
 
-  print ("Processing level 1", quote = FALSE)
+  print ('Processing level 1', quote = FALSE)
 
   ## Prepare first partition  
   IO <- dat
   IO [IO > 0] <- 1
   dat1 <- dat [,colSums (IO) > 1]  ## Omit species with < 2 (!) occurrences    
-  if (is.null (dim (dat1))) stop ("Not enough occurrences")      
+  if (is.null (dim (dat1))) stop ('Not enough occurrences')      
   dat1 <- dat1 [,apply (dat1, 2, var) > 0] ## Omit species without variance
-  if (is.null (dim (dat1))) stop ("Not enough variance in species")      
+  if (is.null (dim (dat1))) stop ('Not enough variance in species')      
   dat1 <- dat1 [apply (dat1, 1, var) > 0,] ## Omit plots without variance
-  if (is.null (dim (dat1))) stop ("Not enough variance in plots")      
+  if (is.null (dim (dat1))) stop ('Not enough variance in plots')      
 
   ## Initiate container for results
   matr <- matrix (NA, nrow = nrow (dat1), ncol = 1) ## Initiate cluster output
   rownames (matr) <- rownames (dat1)
-  colnames (matr) <- "lev.1"
+  colnames (matr) <- 'lev.1'
 
-  ## Initiate matrix for summary ("analytics")
+  ## Initiate matrix for summary ('analytics')
   summ <- matrix (NA, nrow = 7, ncol = 1) 
-  rownames (summ) <- c("Name", 
-    "Subgroups", 
-    "Isomap.dim", 
-    "Isomap.k.min",
-    "Isomap.k", 
-    "Isomap.k.max",
-    "Indicators") 
-  colnames (summ) <- "Part.1"
+  rownames (summ) <- c('Name', 
+    'Subgroups', 
+    'Isomap.dim', 
+    'Isomap.k.min',
+    'Isomap.k', 
+    'Isomap.k.max',
+    'Indicators') 
+  colnames (summ) <- 'Part.1'
                            
   ## Run core function
   output <- core (dat1)
@@ -609,8 +676,8 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
   med [[1]] <- output$medoids
   names (med [[1]]) <- c (1:length (output$medoids))
 
-  ## stop if maxlev is 1
-  if (maxlev == 1) stepdown <- FALSE
+  ## stop if max.level is 1
+  if (max.level == 1) stepdown <- FALSE
   else stepdown <- TRUE
   ## Which group is large enough?
   spl <- as.numeric (output$sizes > 2) 
@@ -619,7 +686,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
                  
   ## Preparative stuff   
   ctb <- matr ## Cluster table 
-  colnames (ctb) <- "lev.1"
+  colnames (ctb) <- 'lev.1'
   mtb <- matrix (NA, nrow = nrow (dat), ncol = 0) ## Medoid table
   rownames (mtb) <- rownames (dat)
 
@@ -634,35 +701,40 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
   
   while (stepdown == TRUE) 
   {
-    if (maxlev != FALSE & count > maxlev) stepdown <- FALSE
+    if (max.level != FALSE & count > max.level) stepdown <- FALSE
     if (stepdown == TRUE)
     {
     
-      ifelse (sum (spl) == 1, cas <- "group", cas <- "groups")
-      if (cas != 0) print (paste ("Level ", count, ": Processing ", sum (spl), 
-        " ", cas, sep = ""), quote = FALSE)
+      ifelse (sum (spl) == 1, cas <- 'group', cas <- 'groups')
+      if (cas != 0) print (paste ('Level ', count, ': Processing ', sum (spl), 
+        ' ', cas, sep = ''), quote = FALSE)
       output.sub <- list ()              ## Empty list for results
       count.2 <- 1
       for (j in 1:length (spl))          ## Loop through partitions
       {                       
-        if (spl [j] == 1)                ## splittable? 
+        if (spl [j] == 1) ## splittable? 
         {                                            
-          x.sub <- dat [matr [,ncol (matr)] == j,]    ## Create data subset
-
+          x.sub <- dat [matr [,ncol (matr)] == j,] ## Create data subset
+                                                       
           ## Prepare second run
           IO.x.sub <- x.sub
           IO.x.sub [IO.x.sub > 0] <- 1
-          x.sub <- x.sub [,colSums (IO.x.sub) > 1]
-          if (is.null (dim (x.sub))) output.sub [[j]] <- NA  ## one species left 
+          x.sub <- x.sub [,colSums (IO.x.sub) > 1] ## Retain occurring species          
+          
+          if (is.null (dim (x.sub))) output.sub [[j]] <- NA  ## Nothing to split           
           else
           {
             ## Omit species and plots without variance
             x.sub <- x.sub [,apply (x.sub, 2, var) > 0]
             x.sub <- x.sub [apply (x.sub, 1, var) > 0,]                        
-            ## and go ...
-            print (paste ("Group", count.2), quote = FALSE)
-            output.sub [[j]] <- core (x.sub)            ## Clustering
-            count.2 <- count.2 + 1
+            
+            if (nrow (x.sub) > 2) ## Enough plots left?
+            { 
+              if (sum (spl) > 1) print (paste ('Group', count.2), quote = FALSE)
+              output.sub [[j]] <- core (x.sub)  ## Clustering
+              count.2 <- count.2 + 1
+            }
+            else output.sub [[j]] <- NA
           }
         }
         else output.sub [[j]] <- NA
@@ -686,7 +758,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       {
         ## Write new clusters to container 
         matr <- cbind (matr, matrix (NA, nrow = nrow (matr), ncol = 1))
-        colnames (matr) [ncol (matr)] <- paste ("lev.", ncol (matr), sep = "")
+        colnames (matr) [ncol (matr)] <- paste ('lev.', ncol (matr), sep = '')
         
         for (m in 1:length (spl))  ## Fill in values 
         {                     
@@ -700,12 +772,12 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
     
         ## Make matrix with names expressing hierarchy
         ctb <- cbind (ctb, matrix (0, nrow = nrow (dat), ncol = 1))       
-        colnames (ctb) [ncol (ctb)] <- paste ("lev.", ncol (ctb), sep = "")
+        colnames (ctb) [ncol (ctb)] <- paste ('lev.', ncol (ctb), sep = '')
         ctb.red <- na.omit (ctb)
         blub <- matr [,ncol (matr)]
         blub [is.na (blub)] <- 0
         ctb.red [,ncol (ctb.red)] <- paste (ctb.red [,ncol (ctb.red)-1],
-          blub, sep = ".")  
+          blub, sep = '.')  
         ctb [rownames (ctb) %in% rownames (ctb.red), ncol (ctb)] <-
           ctb.red [,ncol (ctb.red)]    
         ctb <- as.data.frame (ctb)
@@ -717,14 +789,14 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
         {
           ctb.flat [[o]] <- as.numeric (as.factor (ctb [,o]))
           names (ctb.flat [[o]]) <- rownames (ctb)
-          names (ctb.flat) [o] <- paste ("level.", o, sep="")
+          names (ctb.flat) [o] <- paste ('level.', o, sep='')
         }
     
         ## Make working matrix
         matr.red <- na.omit (matr)
         matr.red  [,ncol (matr.red)] <- as.numeric (as.factor ( paste
           (matr.red [,ncol (matr)-1], matr.red [,ncol (matr.red)],
-          sep = ".")))
+          sep = '.')))
         matr [rownames (matr) %in% rownames (matr.red),] <- matr.red
         matr [is.na (matr)] <- 0
     
@@ -749,7 +821,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
           if (ok.vec [x] == TRUE)  
           {
             summ <- cbind (summ, matrix (NA, nrow = 7, ncol = 1))
-            colnames (summ) [ncol(summ)] <- paste ("Part.", ncol(summ), sep = "")                                      
+            colnames (summ) [ncol(summ)] <- paste ('Part.', ncol(summ), sep = '')                                      
             summ [2,ncol(summ)] <- length (output.sub[[x]]$medoids) ## Subgroups
             summ [3,ncol(summ)] <- output.sub[[x]]$d             ## Isomap dims
             summ [4,ncol(summ)] <- output.sub[[x]]$k.min         ## Minimum k            
@@ -775,7 +847,7 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
     }     
   } ## End while-loop    
 
-  ## Cluster names for the summary matrix
+  ## Cluster names
   if (ncol (ctb) > 1)
   {
     cnam <- vector ()
@@ -820,17 +892,17 @@ function (dat, c.num = FALSE, c.max = 10, filtered = TRUE,
       dat = dat
     )
 
-    class (OUT) <- "isopam"
+    class (OUT) <- 'isopam'
     
   ## save output
   if (juice == TRUE)
   {
-    write.table (ctb, file = "isopam/juicein.txt", 
+    write.table (ctb, file = 'isopam/juicein.txt', 
       col.names = FALSE, quote = FALSE)  
     if (!is.null (OUT$dendro [1]))
     {
       wth <- (nrow (ctb) * 11) + 100
-      bmp (file = "isopam/juicetree.bmp", width = wth)
+      bmp (file = 'isopam/juicetree.bmp', width = wth)
       plot (OUT$dendro)
       dev.off()
     }  
@@ -847,7 +919,7 @@ function (x, ...)
     tree <- x$dendro
     plot (tree, main = format(x$call), ...)  
   }     
-  else print ("No cluster hierarchy", quote = FALSE)
+  else print ('No cluster hierarchy', quote = FALSE)
 }
 
 identify.isopam <-
