@@ -1,28 +1,30 @@
 isopam <-
-  function (dat, max.level = FALSE, fixed.number = FALSE, 
-            opt.number = TRUE, max.number = 6, stopat = c(1,7), 
-            filtered = TRUE, thresh = 3.5, distance = 'bray', 
-            k.max = 100, juice = FALSE) 
+  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6, 
+            l.max = FALSE, stopat = c(1,7), sieve = TRUE, 
+            Gs = 3.5, ind = NULL, distance = 'bray', 
+            k.max = 100, d.max = 7, ..., juice = FALSE) 
 {
   require (vegan) || stop ('needs package vegan')
   require (cluster) || stop ('needs package cluster')
   if (distance != 'bray' & distance != 'jaccard') 
     require (proxy) || stop ('needs package proxy')  
 
-  ## Create directory for juice output
-  if (juice == TRUE) dir.create ('isopam', showWarnings = FALSE)
+  ## Make backwards compatible (this is mainly for use with Juice)
+  if (!is.null (list (...)$fixed.number)) c.fix <- list (...)$fixed.number 
+  if (!is.null (list (...)$opt.number)) c.opt <- list (...)$opt.number   
+  if (!is.null (list (...)$max.number)) c.max <- list (...)$max.number 
+  if (!is.null (list (...)$max.level)) l.max <- list (...)$max.level 
+  if (!is.null (list (...)$filtered)) sieve <- list (...)$filtered 
+  if (!is.null (list (...)$thresh)) Gs <- list (...)$thresh  
   
+  ## Prepare Juice session if applicable 
+  if (juice == TRUE) dir.create ('isopam', showWarnings = FALSE)
+
   ## Add Sample names if necessary
-  if (is.null (rownames (dat)) == TRUE) 
-  {
-    rownames (dat) <- c(1:nrow(dat))
-  }
+  if (is.null (rownames (dat)) == TRUE) rownames (dat) <- c(1:nrow(dat))
    
   ## Add taxon names if necessary
-  if (is.null (colnames (dat)) == TRUE) 
-  {
-    colnames (dat) <- c(1:ncol(dat))
-  }
+  if (is.null (colnames (dat)) == TRUE) colnames (dat) <- c(1:ncol(dat))
 
   ## Convert to matrix if necessary
   nam <- rownames (dat)
@@ -33,20 +35,25 @@ isopam <-
   dat <- dat [,colSums (dat) > 0] ## Remove empty columns
   dat <- dat [rowSums (dat) > 0,] ## ... and rows
 
+  ## In case of predefined indicators check their validity
+  if (!is.null (ind))
+    if (sum (ind %in% colnames (dat)) > 0) sieve <- 'ind'      
+    else stop ('Predefined indicators not found')
+    
   ## Initiate count
   count <- 1
   
   ## Default minimum cluster number
   c.min <- 2
   
-  if (is.numeric (fixed.number))
+  if (is.numeric (c.fix))
   {  
-    opt.number <- FALSE
-    max.level <- 1
-    if (fixed.number < 2) stop ('fixed.number < 2')
-    if (fixed.number > nrow (dat) - 1) fixed.number <- nrow (dat) - 1
-    c.min <- fixed.number
-    c.max <- fixed.number
+    c.opt <- FALSE
+    l.max <- 1
+    if (c.fix < 2) stop ('c.fix < 2')
+    if (c.fix > nrow (dat) - 1) c.fix <- nrow (dat) - 1
+    c.min <- c.fix
+    c.max <- c.fix
   }
 
   ## ----------- core function ---------------------------------------------- ##
@@ -61,6 +68,9 @@ isopam <-
     SP.xdat <- ncol (xdat)                        ## Total number of species
     frq.xdat <- t (as.matrix (colSums (IO.xdat))) ## Species frequencies
     w3 <- N.xdat * ((1 / frq.xdat) + (1 / (N.xdat - frq.xdat))) - 1
+
+    ## In case of predefined indicators: which columns?
+    if (sieve == 'ind') xind <- which (colnames (xdat) %in% ind)
 
     ## Distance matrix
     ## ... using vegan
@@ -107,19 +117,17 @@ isopam <-
         break
     }
 
-    ## Adjust d.max
-    if (N.xdat < 11) d.max <- N.xdat - 1
-    else d.max <- 10
+    ## Adjust d.max if necessary
+    if (d.max > N.xdat - 1) d.max <- N.xdat - 1
     
     ## Adjust c.max if necessary
   
-    if (opt.number == TRUE)  
+    if (c.opt == TRUE)  
     {
-      if (max.number > N.xdat - 1) max.number <- N.xdat - 1
-      if (max.number < 2) stop ('max.number < 2')
-      c.max <- max.number
+      if (c.max > N.xdat - 1) c.max <- N.xdat - 1
+      if (c.max < 2) stop ('c.max < 2')
     }    
-    if (opt.number == FALSE && !is.numeric (fixed.number)) c.max <- 2    
+    if (c.opt == FALSE && !is.numeric (c.fix)) c.max <- 2    
             
     ## Prepare progress bar
     b.loops <- (k.max - k.min) + 1
@@ -168,7 +176,7 @@ isopam <-
           cl <- cl.iso$clustering                     ## Group affiliation
           ci <- cl.iso$clusinfo[,1]                   ## Cluster size
 
-          ############# method = G, fast mode ##################################
+          ######################### fast mode ##################################
 
           if (underdrive == FALSE)
           {
@@ -231,22 +239,30 @@ isopam <-
             gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
             G <- (gt - gt.ex) / gt.sd
             
+            ## Using predefined indicators
+            if (sieve == 'ind')
+            {
+              glgth <- length (G [xind]) 
+              if (glgth == 0) out.array [d,b,e] <- NA
+              else out.array [d,b,e] <- mean (G [xind])
+            }
+            
             ## Averaging
-            if (filtered == FALSE) out.array [d,b,e] <- mean (G)
+            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
             
             ## Standard: Filtering and averaging
-            if (filtered == TRUE) 
+            if (sieve == TRUE) 
             {
               ## Filtering by G
-              glgth <- length (G [G >= thresh]) 
+              glgth <- length (G [G >= Gs]) 
               if (glgth == 0) out.array [d,b,e] <- NA
   
               ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= thresh]) * glgth
+              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
             }
           }
 
-          ############# method G, slow mode ####################################
+          ####################### slow mode ####################################
 
           if (underdrive == TRUE)
           {
@@ -294,18 +310,26 @@ isopam <-
             gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
             G <- (gt - gt.ex) / gt.sd
             
+            ## Using predefined indicators
+            if (sieve == 'ind')
+            {
+              glgth <- length (G [xind]) 
+              if (glgth == 0) out.array [d,b,e] <- NA
+              else out.array [d,b,e] <- mean (G [xind])
+            }
+            
             ## Averaging
-            if (filtered == FALSE) out.array [d,b,e] <- mean (G)
+            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
             
             ## Standard: Filtering and averaging
-            if (filtered == TRUE) 
+            if (sieve == TRUE) 
             {
               ## Filtering by G
-              glgth <- length (G [G >= thresh]) 
+              glgth <- length (G [G >= Gs]) 
               if (glgth == 0) out.array [d,b,e] <- NA
   
               ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= thresh]) * glgth
+              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
             }
           }
           
@@ -417,13 +441,34 @@ isopam <-
       gt.ex <- mc - 1                        ## Expected G
       gt.sd <- sqrt (2 * (mc - 1))           ## Expected sd
       sG <- (g.1 - gt.ex) / gt.sd
-           
-      ## Number of indicators >= thresh
-      noi <- length (sG [sG >= thresh])      
-     
+      
+      ## Some analytical output     
+      ## Averaged G
+      ivx <- round (mean (sG), 1)
+      if (sieve == 'ind')
+      {
+        ## Averaged G (only indicators)
+        ivi <- round (mean (sG [xind]), 1)
+        ## Number of indicators >= Gs
+        noi <- length (sG [xind])      
+      }
+      if (sieve == TRUE)
+      {
+        ## Averaged G (only indicators)
+        ivi <- round (mean (sG [sG >= Gs]), 1)
+        ## Number of indicators >= Gs
+        noi <- length (sG [sG >= Gs])      
+      }
+      if (sieve == FALSE)
+      {
+        ## Averaged G (only indicators)
+        ivi <- 'NA'
+        ## Number of indicators >= Gs
+        noi <- 'NA'      
+      }
+
       ## Was this a good partition? 
       ## At least stopcrit [1] descriptors with g >= stopcrit [2]
-
       if (length (sG [sG >= stopat [2]]) >= stopat [1] * mc) fine <- TRUE                        
       else fine <- FALSE      
       
@@ -438,7 +483,9 @@ isopam <-
         k.max = k.max,
         k = mk,
         d = md,
-        noi = noi )
+        noi = noi,
+        ivx = ivx,
+        ivi = ivi )
     }
     else 
     {    
@@ -452,7 +499,9 @@ isopam <-
         k.max = NULL,
         k = NULL,
         d = NULL,
-        noi = NULL )
+        noi = NULL,
+        ivx = NULL,
+        ivi = NULL )
     }
     return (out)
   }  
@@ -646,14 +695,16 @@ isopam <-
   colnames (matr) <- 'lev.1'
 
   ## Initiate matrix for summary ('analytics')
-  summ <- matrix (NA, nrow = 7, ncol = 1) 
+  summ <- matrix (NA, nrow = 9, ncol = 1) 
   rownames (summ) <- c('Name', 
     'Subgroups', 
     'Isomap.dim', 
     'Isomap.k.min',
     'Isomap.k', 
     'Isomap.k.max',
-    'Indicators') 
+    'Ind.N',
+    'Ind.Gs',
+    'Global.Gs') 
   colnames (summ) <- 'Part.1'
                            
   ## Run core function
@@ -670,6 +721,8 @@ isopam <-
   summ [5,1] <- output$k                   ## Isomap k
   summ [6,1] <- output$k.max               ## Maximum k
   summ [7,1] <- output$noi                 ## No. of indicators used
+  summ [8,1] <- format (output$ivi, digits = 3)  ## Mean sG of indicators
+  summ [9,1] <- format (output$ivx, digits = 3)  ## Mean sG of all descriptors
 
   ## Medoids
   med <- list ()
@@ -677,7 +730,7 @@ isopam <-
   names (med [[1]]) <- c (1:length (output$medoids))
 
   ## stop if max.level is 1
-  if (max.level == 1) stepdown <- FALSE
+  if (l.max == 1) stepdown <- FALSE
   else stepdown <- TRUE
   ## Which group is large enough?
   spl <- as.numeric (output$sizes > 2) 
@@ -701,7 +754,7 @@ isopam <-
   
   while (stepdown == TRUE) 
   {
-    if (max.level != FALSE & count > max.level) stepdown <- FALSE
+    if (l.max != FALSE & count > l.max) stepdown <- FALSE
     if (stepdown == TRUE)
     {
     
@@ -820,7 +873,7 @@ isopam <-
         {
           if (ok.vec [x] == TRUE)  
           {
-            summ <- cbind (summ, matrix (NA, nrow = 7, ncol = 1))
+            summ <- cbind (summ, matrix (NA, nrow = 9, ncol = 1))
             colnames (summ) [ncol(summ)] <- paste ('Part.', ncol(summ), sep = '')                                      
             summ [2,ncol(summ)] <- length (output.sub[[x]]$medoids) ## Subgroups
             summ [3,ncol(summ)] <- output.sub[[x]]$d             ## Isomap dims
@@ -828,6 +881,8 @@ isopam <-
             summ [5,ncol(summ)] <- output.sub[[x]]$k             ## Selected k             
             summ [6,ncol(summ)] <- output.sub[[x]]$k.max         ## Maximum k            
             summ [7,ncol(summ)] <- output.sub[[x]]$noi           ## Indicators    
+            summ [8,ncol(summ)] <- output.sub[[x]]$ivi           ## IV (Indic.)    
+            summ [9,ncol(summ)] <- output.sub[[x]]$ivx           ## IV (all)    
           }
         }
   
@@ -907,7 +962,11 @@ isopam <-
       dev.off()
     }  
   }
-  
+  if (ncol (ctb) == 1) 
+    print (paste ("Non-hierarchical partition"), quote = FALSE)
+  else 
+    print (paste ("Cluster tree with", ncol (ctb), "levels"), quote = FALSE)
+
   invisible (OUT)
 }
 
