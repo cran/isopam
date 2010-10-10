@@ -3,13 +3,13 @@
 \Rdversion{1.1}
 \alias{isotab}
 \title{
-Frequency table for Isopam clusters
+Ordered frequency table for Isopam clusters
 }
 \description{
 Computes an ordered frequency table based on Isopam clustering results. 
-The upper part of the table lists descriptors (usually species) with
-a significant binding to clusters. The lower part is ordered by descending 
-overall frequency. The threshold between these two parts can be shifted. 
+The upper part of the table lists typical descriptors (usually species) with
+a significant binding to single clusters (according to customisable thresholds). 
+The lower part of the table is ordered by descending overall frequency.  
 }
 \usage{
 isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
@@ -41,11 +41,13 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
    \enc{Chitrý}{Chitry} et al. 2002.  
 }
 \value{
-   \item{thresholds}{\code{phi.min} and \code{p.max} used.} 
-   \item{n}{matrix with cluster sizes.}
-   \item{tab}{Data frame with ordered frequencies and their significance. 
+   \item{tab}{dataframe with ordered frequencies and their significance. 
    The latter is derived from Fisher's exact test (\emph{p} <= 0.05: *, 
    \emph{p} <= 0.01: **, \emph{p} <= 0.001: ***).}
+   \item{n}{matrix with cluster sizes.}
+   \item{thresholds}{\code{phi.min} and \code{p.max} used.} 
+   \item{typical}{dataframe with items (often species) typically found in 
+   clusters (according to \code{thresholds}).}
 }
 \references{
    \enc{Chitrý}{Chitry}, M., \enc{Tichý}{Tichy}, L., Holt, J., 
@@ -55,7 +57,7 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
 
    Schmidtlein, S., \enc{Tichý}{Tichy}, L., Feilhauer, H., Faude, U.
    (2010): A brute force approach to vegetation classification.
-   in review.
+   Journal of Vegetation Science (in press).
 }
 \author{
    Sebastian Schmidtlein

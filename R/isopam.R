@@ -11,19 +11,22 @@ isopam <-
 
   ## Make backwards compatible (this is mainly for use with Juice)
   if (!is.null (list (...)$fixed.number)) c.fix <- list (...)$fixed.number 
+  if (!is.null (list (...)$c.num)) c.fix <- list (...)$c.num ## old Juice vers.!  
   if (!is.null (list (...)$opt.number)) c.opt <- list (...)$opt.number   
   if (!is.null (list (...)$max.number)) c.max <- list (...)$max.number 
   if (!is.null (list (...)$max.level)) l.max <- list (...)$max.level 
-  if (!is.null (list (...)$filtered)) sieve <- list (...)$filtered 
   if (!is.null (list (...)$thresh)) Gs <- list (...)$thresh  
+  if (!is.null (list (...)$filtered)) sieve <- list (...)$filtered 
+  ## Note that Gs is set to a default of 30 in old Juice versions. The setting 
+  ## is ignored here
   
   ## Prepare Juice session if applicable 
   if (juice == TRUE) dir.create ('isopam', showWarnings = FALSE)
 
-  ## Add Sample names if necessary
+  ## Add fake 'sample names' if necessary
   if (is.null (rownames (dat)) == TRUE) rownames (dat) <- c(1:nrow(dat))
    
-  ## Add taxon names if necessary
+  ## Add fake 'taxon names' if necessary
   if (is.null (colnames (dat)) == TRUE) colnames (dat) <- c(1:ncol(dat))
 
   ## Convert to matrix if necessary
@@ -67,7 +70,9 @@ isopam <-
     N.xdat <- nrow (xdat)                         ## Total number of plots
     SP.xdat <- ncol (xdat)                        ## Total number of species
     frq.xdat <- t (as.matrix (colSums (IO.xdat))) ## Species frequencies
-    w3 <- N.xdat * ((1 / frq.xdat) + (1 / (N.xdat - frq.xdat))) - 1
+    
+    ## For William's correction
+    w3 <- N.xdat * ((1 / frq.xdat) + (1 / (N.xdat - frq.xdat))) - 1 
 
     ## In case of predefined indicators: which columns?
     if (sieve == 'ind') xind <- which (colnames (xdat) %in% ind)
@@ -576,7 +581,7 @@ isopam <-
               opnum <- opnum+1
               dendro$merge[opnum,] <- c(-j,prev_opnum)
               dendro$height[opnum] <- 1
-			  prev_opnum <- opnum
+			        prev_opnum <- opnum
             }
             else if (prev_index)
             {
@@ -594,7 +599,7 @@ isopam <-
           ## Done merging this cluster
           ## Save the opnum for the last merge in this cluster
           curlevel_group_opnums <- c(curlevel_group_opnums,0)
-		  curlevel_group_opnums[groupnum] <- prev_opnum
+		      curlevel_group_opnums[groupnum] <- prev_opnum
 
 		  ## Special case for singletons
 		  if (!prev_opnum)
@@ -963,9 +968,10 @@ isopam <-
     }  
   }
   if (ncol (ctb) == 1) 
-    print (paste ("Non-hierarchical partition"), quote = FALSE)
+    print (paste ("Non-hierarchical partition created"), quote = FALSE)
   else 
-    print (paste ("Cluster tree with", ncol (ctb), "levels"), quote = FALSE)
+    print (paste ("Cluster tree with", ncol (ctb), "levels created"), 
+    quote = FALSE)
 
   invisible (OUT)
 }
@@ -978,7 +984,7 @@ function (x, ...)
     tree <- x$dendro
     plot (tree, main = format(x$call), ...)  
   }     
-  else print ('No cluster hierarchy', quote = FALSE)
+  else print ('No cluster hierarchy - nothing to plot', quote = FALSE)
 }
 
 identify.isopam <-

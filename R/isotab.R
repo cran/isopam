@@ -1,6 +1,7 @@
 isotab <-
 function (ip, level = 1, phi.min = "auto", p.max = .05)
 { 
+  if (class (ip) != 'isopam') stop ('Object does not seem to result from Isopam')  
   IO <- ip$dat
   IO [IO > 0] <- 1 
   N <- nrow (IO)
@@ -144,8 +145,8 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
     {
       insd <- tab [i, j]                        ## original n in cluster j
       outs <- sum (tab [i,-j])                  ## original n outside cluster j
-      oc <- cs * (insd / siz [j])                ## new n in cluster j
-      on <- (N - cs) * (outs / (N - siz [j]))    ## new n outside cluster j
+      oc <- cs * (insd / siz [j])               ## new n in cluster j
+      on <- (N - cs) * (outs / (N - siz [j]))   ## new n outside cluster j
       total <- oc + on                          ## new total value
       phi.1 <- nv <- (N * oc - total * cs) 
       phi.2 <- sqrt (total * cs * (N - total) * (N - cs))            
@@ -153,7 +154,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
       phi [i,j] <- nv
     }
   }
-  phi [is.na (phi)] <- 0                        ## Replace NaN-values by 0
+  phi [is.na (phi)] <- 0  ## Replace NaN-values by 0
 
   ## Table sorting     
   ## 8) .... by phi and frequency
@@ -165,7 +166,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
   frq.ft.top <- frq.ft [ord.top,]
   ft <- ft [ord.top,]
   phi <- phi [ord.top,]
-
+  
   ## 9) Filter diagnostic species
   filter1 <- apply (ft, 1, min) <= p.max                                          
   filter2 <- apply (phi, 1, max) >= phi.min
@@ -173,7 +174,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
   n.dia <- length (dia) ## how many diagnostic species
   if (n.dia == 0) diag <- "No diagnostic species with given thresholds." 
   if (n.dia > 0) diag <- frq.ft.top [names (dia),]
-
+  
   ## 10) For later use in the bottom part of the tables
   ord.bot <- names (t (frq) [order (-frq),])
   frq.ft.b <- frq.ft [ord.bot,]
@@ -194,12 +195,47 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
   param <- c(phi.min, p.max)
   names (param) <- c("phi.min", "p.max")
 
-  ## 14) Output
+  ## 14) Print info about diagnostic species
+  dig1 <- phi.idx [names (phi.idx) %in% names (dia)]
+  dig2 <- dig1 [rownames (diag)]
+  typ <- list ()
+  for (i in 1:nc) 
+  {
+    if (length (names (dig2) [dig2 == i]) > 0)
+      typ [i] <- paste (names (dig2) [dig2 == i], collapse = ', ')
+    else typ [i] <- 'Nothing particularly typical'
+  }
+  names (typ) <- cnam
+      
+  ## 15) Output
   isotab.out <- list (
-   thresholds = param,   
+   tab = FRQ,  
    n = siz,
-   tab = FRQ)
+   thresholds = param,   
+   typical = typ)
   
-  return (isotab.out)  
+  ## 16) Output to screen
+  
+  cat ('$tab', fill = TRUE)
+  print (FRQ)
+  cat ('', fill = TRUE)
+  cat ('$n', fill = TRUE)
+  print (siz, quote = FALSE)
+  cat ('', fill = TRUE)
+  cat ('$thresholds', fill = TRUE)
+  print (param, quote = FALSE)
+  cat ('', fill = TRUE)
+  cat ('$typical', fill = TRUE)
+  
+  for (i in 1:nc) 
+  {
+    cat (paste ('Typically found in ', cnam [i], ": ", sep =''), fill = TRUE)
+    if (length (names (dig2) [dig2 == i]) > 0)
+      cat (paste (names (dig2) [dig2 == i], collapse = ', '), fill = TRUE)
+    else cat ('Nothing particularly typical', fill = TRUE)
+    cat ('', fill = TRUE)                            
+  }  
+
+  invisible (isotab.out)
 }
 

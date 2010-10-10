@@ -151,7 +151,7 @@
        
        Schmidtlein, S., \enc{Tichý}{Tichy}, L., Feilhauer, H., Faude, U.
        (2010): A brute force approach to vegetation classification.
-       in review.
+       Journal of Vegetation Science (in press).
        
        Tenenbaum, J.B., de Silva, V., Langford, J.C. (2000): A global 
        geometric framework for nonlinear dimensionality reduction. 
@@ -196,6 +196,7 @@
      
      ## non-hierarchical partitioning
      ip<-isopam(andechs,c.fix=3)
-     ip$flat 
+     ip$flat
+     
      }
      \keyword{ cluster }
