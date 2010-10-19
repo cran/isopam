@@ -135,8 +135,9 @@ isopam <-
     if (c.opt == FALSE && !is.numeric (c.fix)) c.max <- 2    
             
     ## Prepare progress bar
+    ## Problem: Overestimation of d.loops in case of neg. eigenvalues in isomap
     b.loops <- (k.max - k.min) + 1
-    d.loops <- d.max - 1
+    d.loops <- d.max - 1 
     pb.mx <- (b.loops * d.loops)
     pb <- txtProgressBar (min = 0, max = pb.mx, char = '.',
       width = 45, style = 3)
@@ -166,10 +167,12 @@ isopam <-
     {   
 
       suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap   
-
-      for (d in 2:d.max) 
+      ## this is for post R-2.13 versions:
+      d.max.new <- min (sum (isom$eig > 0), ncol (isom$points))      
+      
+      for (d in 2:d.max.new)  
       {
-
+            
         isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
           'euclidean', stand = TRUE))
 
@@ -393,10 +396,10 @@ isopam <-
       mc <- wmx.iso [3]; md <- wmx.iso [1]; mk <- wmx.iso [2]
   
       ## ----------- Final run ---------------------------------------------- ##
-      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))          
+      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))                
       d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
       cl.iso <- pam (d.iso, k = mc, diss = TRUE)
-
+      
       CLS <- cl.iso$clustering                 ## Group affiliation
       MDS <- cl.iso$medoids                    ## Medoids
       CLI <- t (cl.iso$clusinfo [,1])          ## Cluster size
