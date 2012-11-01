@@ -4,11 +4,10 @@ isopam <-
             Gs = 3.5, ind = NULL, distance = 'bray', 
             k.max = 100, d.max = 7, ..., juice = FALSE) 
 {
-  require (vegan) || stop ('needs package vegan')
-  require (cluster) || stop ('needs package cluster')
-  if (distance != 'bray' & distance != 'jaccard') 
-    require (proxy) || stop ('needs package proxy')  
 
+  if (distance != "bray" & distance != "jaccard") 
+        require(proxy) || stop("needs package proxy")
+  
   ## Make backwards compatible (this is mainly for use with Juice)
   if (!is.null (list (...)$fixed.number)) c.fix <- list (...)$fixed.number 
   if (!is.null (list (...)$c.num)) c.fix <- list (...)$c.num ## old Juice vers.!  
@@ -77,13 +76,14 @@ isopam <-
     ## In case of predefined indicators: which columns?
     if (sieve == 'ind') xind <- which (colnames (xdat) %in% ind)
 
-    ## Distance matrix
-    ## ... using vegan
-    if (distance == 'bray') dst.xdat <- vegdist (xdat, 'bray')     
-    if (distance == 'jaccard') dst.xdat <- vegdist (xdat, 'jaccard')
-    ## ... using proxy
-    if (distance != 'bray' & distance != 'jaccard')    
-      dst.xdat <- dist (xdat, method = distance) 
+    ## Distance matrix    
+    dst.xdat <- try (vegdist (xdat, method = distance), silent = TRUE)
+    ## if vegan does not work try with package proxy
+    if (class (dst.xdat) == 'try-error')
+    { 
+      require (proxy) || stop ('needs package proxy')     
+      dst.xdat <- dist (xdat, method = distance)
+    }   
     
     ## Exit with dignity if N.xdat < 3
     if (N.xdat < 3)                                                      
@@ -965,7 +965,7 @@ isopam <-
     if (!is.null (OUT$dendro [1]))
     {
       wth <- (nrow (ctb) * 11) + 100
-      bmp (file = 'isopam/juicetree.bmp', width = wth)
+      bmp (filename = 'isopam/juicetree.bmp', width = wth)
       plot (OUT$dendro)
       dev.off()
     }  

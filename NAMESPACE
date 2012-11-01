@@ -1,11 +1,14 @@
-# Default NAMESPACE created by R
-# Remove the previous line if you edit this file
+## Exported functions:
+export(
+       isopam,
+       isotab
+       )
 
-# Export all names
-exportPattern(".")
+## Imports:
+importFrom(cluster, pam, daisy)
+importFrom(vegan, vegdist, isomap)
+importFrom(graphics, plot, identify)
 
-# Import all packages listed as Imports or Depends
-import(
-  cluster,
-  vegan
-)
+## S3 Methods
+S3method(plot, isopam)
+S3method(identify, isopam)

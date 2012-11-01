@@ -11,7 +11,6 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
   if (is.null (ip$hier)) 
   {
     if (level > 1) print ("No hierarchy levels available", quote = FALSE)
-    level <- 1
     tab <- t (aggregate (IO, by = list (ip$flat), FUN = sum))
   }
   else

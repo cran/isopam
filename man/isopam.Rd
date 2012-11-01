@@ -66,15 +66,13 @@
          selection of indicators with \code{sieve = TRUE}
          (\code{ind} overrules \code{sieve}).}
        \item{distance}{distance measure for the distance matrix
-         used as a starting point for Isomap. All but the 
-         Bray-Curtis and the Jaccard measure are passed to the 
-         \code{method} argument in package \pkg{proxy} (see details).} 
+         used as a starting point for Isomap. Any distance measure
+         implemented in packages \pkg{vegan} or \pkg{proxy} can be 
+         used (see details).} 
        \item{k.max}{maximum Isomap \emph{k}.}
        \item{d.max}{maximum number of Isomap dimensions.}
        \item{...}{other arguments to S3 functions \code{plot} and 
-         \code{identify} corresponding to \link[stats]{hclust}. 
-         Also pre-0.8 Isopam arguments are accepted and translated 
-         internally.}         
+         \code{identify} corresponding to \link[stats]{hclust}.}         
        \item{juice}{logical. If \code{TRUE} input files for Juice are
          generated.}
        \item{x}{an \code{isopam} result object.}
@@ -131,15 +129,18 @@
        The methods work just like \code{plot.hclust} and 
        \code{identify.hclust}.
 
-       The preset distance measure is Bray-Curtis 
-       (Odum 1950). Bray-Curtis (\code{'bray'}) and Jaccard 
-       distances (\code{'jaccard'}) are passed to \link[vegan]{vegdist}. 
-       All other measures are passed to the \code{method} argument in 
-       package \pkg{proxy}. This package contains a growing number of 
-       relevant measures. Measures registered in \pkg{proxy} can be 
-       listed with \code{summary(pr_DB)} once \pkg{proxy} is loaded. New 
+       The preset distance measure is Bray-Curtis (Odum 1950). 
+       Distance measures are passed to 
+       \link[vegan:vegdist]{vegdist} in \pkg{vegan}. If vegan does 
+       not know the given measure it is passed to 
+       \link[proxy:dist]{dist} in \pkg{proxy}. Measures available 
+       in vegan are listed in \link[vegan:vegdist]{vegdist}. 
+       Measures registered in \pkg{proxy} can be listed with 
+       \code{summary(pr_DB)} once \pkg{proxy} is loaded. New 
        measures can be defined and registered as described in 
-       \code{?pr_DB}.       
+       \code{?pr_DB}. Isopam can't deal with distance matrices
+       as a replacement for the original data matrix because it
+       operates on individual descriptors (species).       
      }                                     
      \references{
        Odum, E.P. (1950): Bird populations in the Highlands (North 
@@ -151,7 +152,7 @@
        
        Schmidtlein, S., \enc{Tichý}{Tichy}, L., Feilhauer, H., Faude, U.
        (2010): A brute force approach to vegetation classification.
-       Journal of Vegetation Science (in press).
+       \emph{Journal of Vegetation Science} \bold{21}: 1162--1171.
        
        Tenenbaum, J.B., de Silva, V., Langford, J.C. (2000): A global 
        geometric framework for nonlinear dimensionality reduction. 

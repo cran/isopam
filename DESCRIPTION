@@ -1,13 +1,13 @@
 Package: isopam
 Type: Package
 Title: Isopam (Clustering)
-Version: 0.9-10
-Date: 2010-10-19
+Version: 0.9-12
+Date: 2012-11-01
 Author: Sebastian Schmidtlein
 Maintainer: Sebastian Schmidtlein <s.schmidtlein@uni-bonn.de>
-Depends: R (>= 2.7.0), cluster, vegan
+Depends: vegan, cluster
 Suggests: proxy
-Description: Isopam clustering algorithm and utilities. Isopam
+Description: Isopam clustering algorithm and utilities.  Isopam
         optimizes clusters and optionally cluster numbers in a brute
         force style and aims at an optimum separation by all or some
         descriptors (typically species).
@@ -15,6 +15,6 @@ License: GPL-2
 LazyLoad: yes
 URL: http://www.geographie.uni-bonn.de/biogeo/resources/code/isopam
 Encoding: UTF-8
-Packaged: 2012-10-29 08:59:03 UTC; ripley
+Packaged: 2012-11-01 20:41:20 UTC; Admin
 Repository: CRAN
-Date/Publication: 2012-10-29 08:59:03
+Date/Publication: 2012-11-01 21:14:57
