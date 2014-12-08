@@ -1,12 +1,14 @@
 isopam <-
   function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6, 
             l.max = FALSE, stopat = c(1,7), sieve = TRUE, 
-            Gs = 3.5, ind = NULL, distance = 'bray', 
+            Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray', 
             k.max = 100, d.max = 7, ..., juice = FALSE) 
 {
 
   if (distance != "bray" & distance != "jaccard") 
         require(proxy) || stop("needs package proxy")
+  
+  if (!is.null (centers)) c.fix <- length (centers)
   
   ## Make backwards compatible (this is mainly for use with Juice)
   if (!is.null (list (...)$fixed.number)) c.fix <- list (...)$fixed.number 
@@ -115,7 +117,7 @@ isopam <-
         xx [order (xx, na.last = TRUE) [a]])
 
       dm <- pmax (as.dist(dm), as.dist(t(dm)), na.rm = TRUE)
-      fragm <- distconnected (dm, toolong=0,  trace=FALSE)
+      fragm <- vegan::distconnected (dm, toolong=0,  trace=FALSE)
       if (length (unique (fragm)) > 1)
         k.min <- k.min + 1
       else
@@ -175,12 +177,14 @@ isopam <-
             
         isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
           'euclidean', stand = TRUE))
-
+        
         for (e in c.min:c.max) ## e-loop: Cluster no.
         {                      
           ## --------- Partitioning (PAM) ------------------------------------ #
           
-          cl.iso <- pam (isodiss, k = e, diss = TRUE) ## PAM
+          if (!is.null (centers)) cl.iso <- pam (isodiss, k = e, medoids = centers, 
+            diss = TRUE, do.swap = FALSE)
+          else cl.iso <- pam (isodiss, k = e, diss = TRUE) ## PAM
           cl <- cl.iso$clustering                     ## Group affiliation
           ci <- cl.iso$clusinfo[,1]                   ## Cluster size
 
@@ -394,11 +398,13 @@ isopam <-
         (wmx.iso [,2])),], silent = TRUE)
 
       mc <- wmx.iso [3]; md <- wmx.iso [1]; mk <- wmx.iso [2]
-  
+      
       ## ----------- Final run ---------------------------------------------- ##
       suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))                
       d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
-      cl.iso <- pam (d.iso, k = mc, diss = TRUE)
+      if (!is.null (centers)) cl.iso <- pam (d.iso, k = mc, medoids = centers, 
+        diss = TRUE, do.swap=FALSE)
+      else cl.iso <- pam (d.iso, k = mc, diss = TRUE)
       
       CLS <- cl.iso$clustering                 ## Group affiliation
       MDS <- cl.iso$medoids                    ## Medoids

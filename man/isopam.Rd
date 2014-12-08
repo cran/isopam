@@ -16,7 +16,7 @@
      \usage{
      isopam (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6, 
             l.max = FALSE, stopat = c(1,7), sieve = TRUE, 
-            Gs = 3.5, ind = NULL, distance = 'bray', 
+            Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray', 
             k.max = 100, d.max = 7, \dots, juice = FALSE) 
      
      \method{identify}{isopam}(x, \dots)
@@ -65,7 +65,9 @@
          turns Isopam in an expert system. Replaces the automated
          selection of indicators with \code{sieve = TRUE}
          (\code{ind} overrules \code{sieve}).}
-       \item{distance}{distance measure for the distance matrix
+       \item{centers}{optional vector with observations used as 
+	     cluster cores (supervised classification).}
+	   \item{distance}{distance measure for the distance matrix
          used as a starting point for Isomap. Any distance measure
          implemented in packages \pkg{vegan} or \pkg{proxy} can be 
          used (see details).} 

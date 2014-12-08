@@ -1,10 +1,9 @@
-be5a6ab685cd8ab9322cb8c1905cf281 *DESCRIPTION
+d1e64ce8f5981236249f329f9194fd00 *DESCRIPTION
 cea5599b2dc3fcea099de7edc1583a46 *NAMESPACE
-50fb46e4cc1d3e80810cf36a1a56e124 *R/isopam.R
+1bddd387ba00d3836d43c7624ca97b40 *R/isopam.R
 cef758d932552a5fbfbd2fa79b7d2745 *R/isotab.R
 f5fc94ce376d5d2fe4736e2bd29eab28 *data/andechs.rda
 8290668d47f69457f2ae39234275d0b6 *inst/CITATION
-6366db1ff6fc7bd4e092922c19bfd8a2 *isopam-Ex.R
 567fd23da922433b4262fed514c0b047 *man/andechs.rd
-5bd8721eb58237d625e21013692b33e3 *man/isopam.Rd
+7f7dd19b6c9829ff9d39cd9b37246c58 *man/isopam.Rd
 91e96830f5e22a5d9166dd52f08d0c9e *man/isotab.Rd
