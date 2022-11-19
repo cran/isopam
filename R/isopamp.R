@@ -1,7 +1,7 @@
-isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
-                    l.max = FALSE, stopat = c(1,7), sieve = TRUE,
-                    Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-                    k.max = 100, d.max = 7, ..., juice = FALSE)
+isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
+                             l.max = FALSE, stopat = c(1,7), sieve = TRUE,
+                             Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
+                             k.max = 100, d.max = 7, ..., juice = FALSE)
 {
 
   if (!is.null (centers)) c.fix <- length (centers)
@@ -88,8 +88,8 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       mess1 <- 'Not enough data.'
       if (juice == TRUE)
       {
-      write.table (mess1, 'isopam/alert.txt', row.names = FALSE,
-        col.names = FALSE, quote = FALSE)
+        write.table (mess1, 'isopam/alert.txt', row.names = FALSE,
+                     col.names = FALSE, quote = FALSE)
       }
       stop (mess1)
     }
@@ -109,10 +109,9 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       dm <- dmtr
 
       is.na (dm) <- apply (dm, 2, function (xx) xx >
-        xx [order (xx, na.last = TRUE) [a]])
-
-      dm <- pmax (as.dist(dm), as.dist(t(dm)), na.rm = TRUE)
-      fragm <- vegan::distconnected (dm, toolong = 0,  trace = FALSE)
+                             xx [order (xx, na.last = TRUE) [a]])
+            dm <- pmax (as.dist(dm), as.dist(t(dm)), na.rm = TRUE)
+      fragm <- vegan::distconnected (dm, toolong=0,  trace=FALSE)
       if (length (unique (fragm)) > 1)
         k.min <- k.min + 1
       else
@@ -137,17 +136,15 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     d.loops <- d.max - 1
     pb.mx <- (b.loops * d.loops)
     pb <- txtProgressBar (min = 0, max = pb.mx, char = '.',
-      width = 45, style = 3)
+                          width = 45, style = 3)
 
     ## Prepare output array
-    out.array <- array (NA, dim = c(10, k.max, c.max))
 
     ## Need a place to store the calculations done in the g2 loop
     ## so they may be reused rather than recalculated.
     ## The +1 is due to zeros needing to be indexed as well.
-
     try (DDD_lookup_table <-
-      array (NA_real_, c(N.xdat, N.xdat + 1, N.xdat + 1)), silent = TRUE)
+           array (NA_real_, c(N.xdat, N.xdat+1, N.xdat+1)), silent = TRUE)
     underdrive <- FALSE
     if (!exists ('DDD_lookup_table'))
     {
@@ -159,26 +156,32 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     IO.xdat.logical <- IO.xdat != 0
 
     ## ----------- Start the big loops .... ---------------------------- ##
+    rg.k <- k.max - k.min
 
-    for (b in c(k.min:k.max))  ## b-loop: Isomap k
+    # Criterion for parallel processing subject to further experiments:
+    if(rg.k > 50){
+
+    future::plan(future::multisession)
+
+    out.array <- array(future.apply::future_sapply(k.min:k.max, function(b)  ## b-loop: Isomap k
     {
-
       suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
       ## this is for post R-2.13 versions:
-      d.max.new <- min (sum (isom$eig > 0), ncol (isom$points))
+      d.max.new <- min (sum (isom$eig > 0), ncol (isom$points), d.max, na.rm = T)
+      out.mat <- matrix(NA,nrow= d.max-1, ncol = c.max-c.min+1 )
 
       for (d in 2:d.max.new)
       {
 
         isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
-          'euclidean', stand = TRUE))
+                                              'euclidean', stand = TRUE))
 
         for (e in c.min:c.max) ## e-loop: Cluster no.
         {
           ## --------- Partitioning (PAM) ------------------------------------ #
 
           if (!is.null (centers)) cl.iso <- pam (isodiss, k = e, medoids = centers,
-            diss = TRUE, do.swap = FALSE)
+                                                 diss = TRUE, do.swap = FALSE)
           else cl.iso <- pam (isodiss, k = e, diss = TRUE) ## PAM
           cl <- cl.iso$clustering                     ## Group affiliation
           ci <- cl.iso$clusinfo[,1]                   ## Cluster size
@@ -216,7 +219,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
                 if (!is.na(DDDadd))
                 {
-                ## Already existed in the lookup table; use it.
+                  ## Already existed in the lookup table; use it.
                   DDD <- DDD + DDDadd
                 }
                 else
@@ -250,22 +253,22 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             if (sieve == 'ind')
             {
               glgth <- length (G [xind])
-              if (glgth == 0) out.array [d,b,e] <- NA
-              else out.array [d,b,e] <- mean (G [xind])
+              if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+              else out.mat [d-1,e+1-c.min] <- mean (G [xind])
             }
 
             ## Averaging
-            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
+            if (sieve == FALSE) out.mat [d-1,e+1-c.min] <- mean (G)
 
             ## Standard: Filtering and averaging
             if (sieve == TRUE)
             {
               ## Filtering by G
               glgth <- length (G [G >= Gs])
-              if (glgth == 0) out.array [d,b,e] <- NA
+              if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
 
               ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
+              else out.mat [d-1,e+1-c.min] <- mean (G [G >= Gs]) * glgth
             }
           }
 
@@ -321,22 +324,22 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             if (sieve == 'ind')
             {
               glgth <- length (G [xind])
-              if (glgth == 0) out.array [d,b,e] <- NA
-              else out.array [d,b,e] <- mean (G [xind])
+              if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+              else out.mat [d-1,e+1-c.min] <- mean (G [xind])
             }
 
             ## Averaging
-            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
+            if (sieve == FALSE) out.mat [d-1,e+1-c.min] <- mean (G)
 
             ## Standard: Filtering and averaging
             if (sieve == TRUE)
             {
               ## Filtering by G
               glgth <- length (G [G >= Gs])
-              if (glgth == 0) out.array [d,b,e] <- NA
+              if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
 
               ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
+              else out.mat [d-1,e+1-c.min] <- mean (G [G >= Gs]) * glgth
             }
           }
 
@@ -345,8 +348,199 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         }
         setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
       }
-    }
+      return(out.mat)
+    }), dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))
+    }else{
+    future::plan(future::sequential)
+    out.array<-array(sapply(k.min:k.max, function(b)  ## b-loop: Isomap k
+    {
+        suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+        ## this is for post R-2.13 versions:
+        d.max.new <- min (sum (isom$eig > 0), ncol (isom$points), d.max, na.rm = T)
+        out.mat <- matrix(NA,nrow= d.max-1, ncol = c.max-c.min+1 )
 
+        for (d in 2:d.max.new)
+        {
+
+          isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
+                                                'euclidean', stand = TRUE))
+
+          for (e in c.min:c.max) ## e-loop: Cluster no.
+          {
+            ## --------- Partitioning (PAM) ------------------------------------ #
+
+            if (!is.null (centers)) cl.iso <- pam (isodiss, k = e, medoids = centers,
+                                                   diss = TRUE, do.swap = FALSE)
+            else cl.iso <- pam (isodiss, k = e, diss = TRUE) ## PAM
+            cl <- cl.iso$clustering                     ## Group affiliation
+            ci <- cl.iso$clusinfo[,1]                   ## Cluster size
+
+            ######################### fast mode ##################################
+
+            if (underdrive == FALSE)
+            {
+              ## For Williams' correction
+              w1 <- N.xdat * sum (1 / ci) - 1
+              w2 <- 6 * N.xdat * (e - 1)
+
+              ## Compute G-values for species (code adapted from Lubomir Tichy)
+
+              gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+
+              for (g1 in 1:SP.xdat)         ## g1-loop through species
+              {
+                DDD <- 0
+                spec_frq <- frq.xdat [g1]
+
+                ## For Williams' correction
+                willi <- 1 + ((w1 * w3 [g1]) / w2)
+
+                ## Mask out entries in cl using appropriate col in IO.xdat
+                groupids <- cl[IO.xdat.logical[,g1]]
+
+                for (g.fast in 1:e)             ## g.fast-loop through clusters
+                {
+                  fra1 <- sum (groupids == g.fast)   ## Species occ. in cluster
+                  Nj <- ci [g.fast]                  ## Cluster size
+
+                  ## Have we calculated this before?
+                  DDDadd <- DDD_lookup_table [spec_frq, Nj+1, fra1+1]
+
+                  if (!is.na(DDDadd))
+                  {
+                    ## Already existed in the lookup table; use it.
+                    DDD <- DDD + DDDadd
+                  }
+                  else
+                  {
+                    ## so need to calculate it ...
+                    bom <- spec_frq / N.xdat
+                    bim <- 1 - bom
+                    fra0 <- Nj - fra1
+                    bum <- fra1 / (Nj * bom)
+                    bam <- fra0 / (Nj * bim)
+                    DDDadd <- 0
+                    if (!is.na (bum))
+                      if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum))
+                    if (!is.na (bam))
+                      if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))
+                    DDD <- DDD + DDDadd
+                    ## ... and store for next time
+                    DDD_lookup_table [spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                  }
+                }
+                DDD <- DDD * 2
+                gt [g1,] <- DDD / willi ## Williams' correction
+              }
+
+              ## Standardization (Botta-Dukat et al. 2005)
+              gt.ex <- e - 1                 ## Expected G
+              gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+              G <- (gt - gt.ex) / gt.sd
+
+              ## Using predefined indicators
+              if (sieve == 'ind')
+              {
+                glgth <- length (G [xind])
+                if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+                else out.mat [d-1,e+1-c.min] <- mean (G [xind])
+              }
+
+              ## Averaging
+              if (sieve == FALSE) out.mat [d-1,e+1-c.min] <- mean (G)
+
+              ## Standard: Filtering and averaging
+              if (sieve == TRUE)
+              {
+                ## Filtering by G
+                glgth <- length (G [G >= Gs])
+                if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+
+                ## Averaging
+                else out.mat [d-1,e+1-c.min] <- mean (G [G >= Gs]) * glgth
+              }
+            }
+
+            ####################### slow mode ####################################
+
+            if (underdrive == TRUE)
+            {
+              ## For Williams' correction
+              w1 <- N.xdat * sum (1 / ci) - 1
+              w2 <- 6 * N.xdat * (e - 1)
+
+              ## Compute G-values for species (code adapted from Lubomir Tichy)
+
+              gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+
+              for (g1 in 1:SP.xdat)         ## g1-loop through species
+              {
+                DDD <- 0
+                spec_frq <- frq.xdat [g1]
+
+                ## For Williams' correction
+                willi <- 1 + ((w1 * w3 [g1]) / w2)
+
+                ## Mask out entries in cl using appropriate col in IO.xdat
+                groupids <- cl[IO.xdat.logical[,g1]];
+
+                for (g.slow in 1:e)             ## g.slow-loop through clusters
+                {
+                  fra1 <- sum (groupids == g.slow)   ## Species occ. in cluster
+                  Nj <- ci [g.slow]                  ## Cluster size
+                  bom <- spec_frq / N.xdat
+                  bim <- 1 - bom
+                  fra0 <- Nj - fra1
+                  bum <- fra1 / (Nj * bom)
+                  bam <- fra0 / (Nj * bim)
+                  DDDadd <- 0
+                  if (!is.na (bum))
+                    if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum))
+                  if (!is.na (bam))
+                    if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))
+                  DDD <- DDD + DDDadd
+                }
+                DDD <- DDD * 2
+                gt [g1,] <- DDD / willi ## Williams' correction
+              }
+
+              ## Standardization (Botta-Dukat et al. 2005)
+              gt.ex <- e - 1                 ## Expected G
+              gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+              G <- (gt - gt.ex) / gt.sd
+
+              ## Using predefined indicators
+              if (sieve == 'ind')
+              {
+                glgth <- length (G [xind])
+                if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+                else out.mat [d-1,e+1-c.min] <- mean (G [xind])
+              }
+
+              ## Averaging
+              if (sieve == FALSE) out.mat [d-1,e+1-c.min] <- mean (G)
+
+              ## Standard: Filtering and averaging
+              if (sieve == TRUE)
+              {
+                ## Filtering by G
+                glgth <- length (G [G >= Gs])
+                if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
+
+                ## Averaging
+                else out.mat [d-1,e+1-c.min] <- mean (G [G >= Gs]) * glgth
+              }
+            }
+
+            ######################################################################
+
+          }
+          setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
+        }
+        return(out.mat)
+      }),dim = c(d.max-1,c.max-c.min+1, k.max-k.min+1))
+    }
+    #
     close (pb) ## Close progress bar
 
     ## ----------- End parameter search ------------------------------------- ##
@@ -363,7 +557,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         if (juice == TRUE)
         {
           write.table (mess2, 'isopam/alert.txt',
-            row.names = FALSE, col.names = FALSE, quote = FALSE)
+                       row.names = FALSE, col.names = FALSE, quote = FALSE)
         }
         stop ('No solution found with current settings')
       }
@@ -377,28 +571,28 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       ## ----------- Parameters for final run ------------------------------- ##
 
       wmx.iso <- which (out.array == mn.iso, arr.ind = TRUE) ## Cases with max
-      colnames (wmx.iso) <- c('iso.dim', 'iso.k', 'clusters')
+      colnames (wmx.iso) <- c('iso.dim', 'clusters', 'iso.k')
 
       ## In case of multiple best solutions select the one with max clusters,
       ## max dims and max k (in this rank order)
 
       ## Select cases with maximum number of clusters
-      try (wmx.iso <- wmx.iso [which (wmx.iso [,3] == max
-        (wmx.iso [,3])),], silent = TRUE)
+      try (wmx.iso <- wmx.iso [which (wmx.iso [,2] == max
+                                      (wmx.iso [,2])),], silent = TRUE)
       ## Select cases with maximum number of Isomap dimensions
       try (wmx.iso <- wmx.iso [which (wmx.iso [,1] == max
-        (wmx.iso [,1])),], silent = TRUE)
+                                      (wmx.iso [,1])),], silent = TRUE)
       ## Select cases with maximum k
-      try (wmx.iso <- wmx.iso [which (wmx.iso [,2] == max
-        (wmx.iso [,2])),], silent = TRUE)
+      try (wmx.iso <- wmx.iso [which (wmx.iso [,3] == max
+                                      (wmx.iso [,3])),], silent = TRUE)
 
-      mc <- wmx.iso [3]; md <- wmx.iso [1]; mk <- wmx.iso [2]
+      mc <- wmx.iso [2]-1+c.min; md <- wmx.iso [1]+1; mk <- wmx.iso [3]-1+k.min
 
       ## ----------- Final run ---------------------------------------------- ##
       suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))
       d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
       if (!is.null (centers)) cl.iso <- pam (d.iso, k = mc, medoids = centers,
-        diss = TRUE, do.swap=FALSE)
+                                             diss = TRUE, do.swap=FALSE)
       else cl.iso <- pam (d.iso, k = mc, diss = TRUE)
 
       CLS <- cl.iso$clustering                 ## Group affiliation
@@ -513,6 +707,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi = NULL )
     }
     return (out)
+
   }
 
   ## ----------- dendrogram function (code: J. Collison, 2009) -------------- ##
@@ -558,22 +753,22 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
         log_in_group <- (groups == groupnum)
 
-		num_in_clust <- sum(log_in_group);
+        num_in_clust <- sum(log_in_group);
 
-		if (num_in_clust < 1)
-		{
-			break
-		}
+        if (num_in_clust < 1)
+        {
+          break
+        }
 
-		if (level == length(clust))
-		{
-		  ## Bottom level
-		  ## Join all these and add them to the order vector
+        if (level == length(clust))
+        {
+          ## Bottom level
+          ## Join all these and add them to the order vector
 
-		  prev_opnum <- 0
-		  prev_index <- 0
+          prev_opnum <- 0
+          prev_index <- 0
 
-		  for (j in 1:num_obs)
+          for (j in 1:num_obs)
           {
             if (!log_in_group[j])
               next
@@ -585,7 +780,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
               opnum <- opnum+1
               dendro$merge[opnum,] <- c(-j,prev_opnum)
               dendro$height[opnum] <- 1
-			        prev_opnum <- opnum
+              prev_opnum <- opnum
             }
             else if (prev_index)
             {
@@ -603,13 +798,13 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
           ## Done merging this cluster
           ## Save the opnum for the last merge in this cluster
           curlevel_group_opnums <- c(curlevel_group_opnums,0)
-		      curlevel_group_opnums[groupnum] <- prev_opnum
+          curlevel_group_opnums[groupnum] <- prev_opnum
 
-		  ## Special case for singletons
-		  if (!prev_opnum)
-		  {
-			  curlevel_group_opnums[groupnum] <- -prev_index
-		  }
+          ## Special case for singletons
+          if (!prev_opnum)
+          {
+            curlevel_group_opnums[groupnum] <- -prev_index
+          }
         }
         else
         {
@@ -642,7 +837,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             {
               opnum <- opnum+1
               dendro$merge[opnum,] <- c(prev_opnum,
-                group_opnums[groups_to_join[r]])
+                                        group_opnums[groups_to_join[r]])
               dendro$height[opnum] <- length(clust) - level + 1
               prev_opnum <- opnum;
             }
@@ -706,19 +901,18 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
   ## Initiate matrix for summary ('analytics')
   summ <- matrix (NA, nrow = 9, ncol = 1)
   rownames (summ) <- c('Name',
-    'Subgroups',
-    'Isomap.dim',
-    'Isomap.k.min',
-    'Isomap.k',
-    'Isomap.k.max',
-    'Ind.N',
-    'Ind.Gs',
-    'Global.Gs')
+                       'Subgroups',
+                       'Isomap.dim',
+                       'Isomap.k.min',
+                       'Isomap.k',
+                       'Isomap.k.max',
+                       'Ind.N',
+                       'Ind.Gs',
+                       'Global.Gs')
   colnames (summ) <- 'Part.1'
 
   ## Run core function
   output <- core (dat1)
-
   ## Fill cluster container
   matr [,1] <- output$clusters
 
@@ -769,7 +963,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
       ifelse (sum (spl) == 1, cas <- 'group', cas <- 'groups')
       if (cas != 0) print (paste ('Level ', count, ': Processing ', sum (spl),
-        ' ', cas, sep = ''), quote = FALSE)
+                                  ' ', cas, sep = ''), quote = FALSE)
       output.sub <- list ()              ## Empty list for results
       count.2 <- 1
       for (j in 1:length (spl))          ## Loop through partitions
@@ -793,7 +987,9 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             if (nrow (x.sub) > 2) ## Enough plots left?
             {
               if (sum (spl) > 1) print (paste ('Group', count.2), quote = FALSE)
-              output.sub [[j]] <- core (x.sub)  ## Clustering
+              output.sub [[j]] <- core (data.matrix(x.sub, rownames.force = NA))  ## Clustering
+              #ge?ndert, wegen ge?ndertem Datenformat nach Parallelisierung
+
               count.2 <- count.2 + 1
             }
             else output.sub [[j]] <- NA
@@ -839,7 +1035,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         blub <- matr [,ncol (matr)]
         blub [is.na (blub)] <- 0
         ctb.red [,ncol (ctb.red)] <- paste (ctb.red [,ncol (ctb.red)-1],
-          blub, sep = '.')
+                                            blub, sep = '.')
         ctb [rownames (ctb) %in% rownames (ctb.red), ncol (ctb)] <-
           ctb.red [,ncol (ctb.red)]
         ctb <- as.data.frame (ctb)
@@ -857,8 +1053,8 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ## Make working matrix
         matr.red <- na.omit (matr)
         matr.red  [,ncol (matr.red)] <- as.numeric (as.factor ( paste
-          (matr.red [,ncol (matr)-1], matr.red [,ncol (matr.red)],
-          sep = '.')))
+                                                                (matr.red [,ncol (matr)-1], matr.red [,ncol (matr.red)],
+                                                                  sep = '.')))
         matr [rownames (matr) %in% rownames (matr.red),] <- matr.red
         matr [is.na (matr)] <- 0
 
@@ -867,10 +1063,10 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         rownames (mtb) <- rownames (dat)
         for (n in 1:length (spl))
         {
-            if (ok.vec [n] == TRUE)
-            {
-              mtb [output.sub [[n]]$medoids, ncol (mtb)] <- 1
-            }
+          if (ok.vec [n] == TRUE)
+          {
+            mtb [output.sub [[n]]$medoids, ncol (mtb)] <- 1
+          }
         }
         med [[count]] <- names (mtb [mtb [,ncol (mtb)] == 1, ncol (mtb)])
         names (med [[count]]) <- ctb [mtb [,ncol (mtb)] == 1, ncol (ctb)]
@@ -925,7 +1121,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     {
       nch <- nchar (cnam [z])
       childs <- c (childs, length (grep (cnam [z], substr (cnam, 1, nch),
-        value = TRUE)))
+                                         value = TRUE)))
     }
     summ [1,2:ncol(summ)] <- cnam [childs > 1]
   }
@@ -956,13 +1152,13 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       dat = dat
     )
 
-    class (OUT) <- 'isopam'
+  class (OUT) <- 'isopam'
 
   ## save output
   if (juice == TRUE)
   {
     write.table (ctb, file = 'isopam/juicein.txt',
-      col.names = FALSE, quote = FALSE)
+                 col.names = FALSE, quote = FALSE)
     if (!is.null (OUT$dendro [1]))
     {
       wth <- (nrow (ctb) * 11) + 100
@@ -975,25 +1171,25 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     print (paste ("Non-hierarchical partition created"), quote = FALSE)
   else
     print (paste ("Cluster tree with", ncol (ctb), "levels created"),
-    quote = FALSE)
+           quote = FALSE)
 
   invisible (OUT)
 }
 
-plot.isopam <-
-function (x, ...)
-{
-  if (!is.null (x$dendro [1]))
-  {
-    tree <- x$dendro
-    plot (tree, main = format(x$call), ...)
-  }
-  else print ('No cluster hierarchy - nothing to plot', quote = FALSE)
-}
+  plot.isopam <-
+    function (x, ...)
+    {
+      if (!is.null (x$dendro [1]))
+      {
+        tree <- x$dendro
+        plot (tree, main = format(x$call), ...)
+      }
+      else print ('No cluster hierarchy - nothing to plot', quote = FALSE)
+    }
 
-identify.isopam <-
-function (x, ...)
-{
-  identify (x$dendro, MAXCLUSTER = nrow (x$dat), ...)
-}
+  identify.isopam <-
+    function (x, ...)
+    {
+      identify (x$dendro, MAXCLUSTER = nrow (x$dat), ...)
+    }
 

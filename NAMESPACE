@@ -1,14 +1,20 @@
-## Exported functions:
-export(
-       isopam,
-       isotab
-       )
+## Exports
+     export(isopam)
+     export(isopamp)
+     export(isotab)
 
-## Imports:
-importFrom(cluster, pam, daisy)
-importFrom(vegan, vegdist, isomap)
-importFrom(graphics, plot, identify)
+## Imports
+    importFrom("grDevices", "bmp", "dev.off")
+    importFrom("graphics", "identify")
+    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", "var")
+    importFrom("utils", "setTxtProgressBar", "txtProgressBar", "write.table")
+    importFrom("cluster", "pam", "daisy")
+    importFrom("vegan", "vegdist", "distconnected", "isomap")
+    importFrom("future", "plan")
+    importFrom("future.apply", "future_sapply")
+    importFrom("proxy", "dist")
+    importFrom("methods", "is")
 
 ## S3 Methods
-S3method(plot, isopam)
-S3method(identify, isopam)
+    S3method(plot, isopam)
+    S3method(identify, isopam)
