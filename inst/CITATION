@@ -1,5 +1,6 @@
+citHeader("To cite the package 'isopam' in publications use:")
+
 bibentry (bibtype = 'Article',
-  title = 'A brute force approach to vegetation classification',
   author = c(
        person("Sebastian", "Schmidtlein", role = "aut"),
        person("Lubomir", "Tichy", role = "aut"),
@@ -7,8 +8,12 @@ bibentry (bibtype = 'Article',
        person("Faude", "Ulrike", role = "aut")
        ),
   year = 2010,
+  title = 'A brute force approach to vegetation classification',
   journal = 'Journal of Vegetation Science',
   volume = 21,
   number = 6,
-  pages = '1162-1171',
-  doi = '10.1111/j.1654-1103.2010.01221.x')
+  pages = '1162-1171'
+)
+textVersion = paste0("Schmidtlein, S., Tichy, L., Feilhauer, H., Faude, U. (2010).",
+  "A brute force approach to vegetation classification.",
+  "Journal of Vegetation Science, 21(6), 1162-1171.")

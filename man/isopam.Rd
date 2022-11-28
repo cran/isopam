@@ -4,6 +4,7 @@
      \alias{isopam}
      \alias{plot.isopam}
      \alias{identify.isopam}
+     \alias{summary.isopam}
      \alias{isopamp}
      \title{Isopam (Clustering)}
      \description{
@@ -22,15 +23,18 @@
      isopam (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             l.max = FALSE, stopat = c(1,7), sieve = TRUE,
             Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-            k.max = 100, d.max = 7, \dots, juice = FALSE)
+            k.max = 100, d.max = 7, juice = FALSE,
+            progressbars = TRUE, wordy = TRUE, \dots)
 
      isopamp (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             l.max = FALSE, stopat = c(1,7), sieve = TRUE,
             Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-            k.max = 100, d.max = 7, \dots, juice = FALSE)
+            k.max = 100, d.max = 7, juice = FALSE,
+            progressbars = TRUE, wordy = TRUE, \dots)
 
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
+     \method{summary}{isopam}(object, \dots)
      }
      \arguments{
        \item{dat}{data matrix: each row corresponds to an
@@ -76,18 +80,26 @@
          selection of indicators with \code{sieve = TRUE}
          (\code{ind} overrules \code{sieve}).}
        \item{centers}{optional vector with observations used as
-	     cluster cores (supervised classification).}
-	   \item{distance}{distance measure for the distance matrix
-         used as a starting point for Isomap. Any distance measure
-         implemented in packages \pkg{vegan} or \pkg{proxy} can be
-         used (see details).}
+	       cluster cores (supervised classification).}
+	     \item{distance}{name of a dissimilarity index for the 
+         distance matrix used as a starting point for Isomap.
+         Any distance measure implemented in packages \pkg{vegan}
+         (partial matches accepted or \pkg{proxy} (exact matches
+         required) can be used (see details).}
        \item{k.max}{maximum Isomap \emph{k}.}
        \item{d.max}{maximum number of Isomap dimensions.}
-       \item{...}{other arguments to S3 functions \code{plot} and
-         \code{identify} corresponding to \link[stats]{hclust}.}
        \item{juice}{logical. If \code{TRUE} input files for Juice are
          generated.}
-       \item{x}{an \code{isopam} result object.}
+       \item{progressbars}{logical. If \code{TRUE} progress bars are
+         shown.}
+       \item{wordy}{logical. If \code{TRUE} status messages are shown.}         
+       \item{...}{other arguments used by juice or passed to S3 
+         functions \code{plot} and \code{identify} (see 
+         \link[stats]{dendrogram} and \link[stats]{hclust}.}
+       \item{x}{\code{isopam} result object in methods 
+         \code{plot} and \code{identify}.}
+       \item{object}{\code{isopam} result object in method 
+       \code{summary}.}
      }
      \value{
        \item{call}{generating call}
@@ -111,9 +123,12 @@
          standardized G value of these indicators; and
          \code{Global.Gs}: the average standardized G value of all
          descriptors.}
+       \item{centers_usr}{Cluster centers suggested by user.}
+       \item{ind_usr}{Indicators suggested by user.}
+       \item{indicators}{Indicators used in each partition.}
        \item{dendro}{an object of class \code{hclust} representing
-         the clustering. Not present with only one level of
-         partitioning.}
+         the clustering (as used by \code{plot}). Not present
+         with only one level of partitioning.}
        \item{dat}{data used}
      }
      \details{
@@ -139,11 +154,9 @@
        considerable speed advantage with most large objects but
        no advantage or even slow-down with small objects.
 
-       The \code{plot} and \code{identify} methods for class 
-       \code{isopam} simply link to the \link[stats]{hclust} 
-       object \code{$dendro} resulting from \code{isopam} 
-       in case of hierarchical partitioning. The methods work 
-       just like \code{plot.hclust} and \code{identify.hclust}.
+       \code{plot} creates (and silently returns) an object of class 
+       \code{dendrogram} and calls the S3 plot method for that class.
+       \code{identify} works just like \code{identify.hclust}. 
 
        The preset distance measure is Bray-Curtis (Odum 1950).
        Distance measures are passed to
@@ -179,9 +192,9 @@
        instead of \code{isopam}. However, the optimization procedure 
        (selection of Isomap dimensions and -\emph{k}, optionally selection 
        of cluster numbers) is based on a brute force approach that takes 
-       its time with large data sets (maybe too much time). If used with 
-       data not representing species in plots make sure that the indicator 
-       approach is appropriate.
+       its time with large data sets. If used with data not representing
+       species in plots make sure that the indicator approach is
+       appropriate.
 
        With very small datasets, the indicator based optimization may fail.
        In such cases consider using \code{filtered = FALSE} instead of

@@ -12,7 +12,7 @@ a significant binding to single clusters (according to customisable thresholds).
 The lower part of the table is ordered by descending overall frequency.  
 }
 \usage{
-isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
+isotab(ip, level = 1, phi.min = 'auto', p.max = .05, wordy = FALSE)
 }
 \arguments{
   \item{ip}{
@@ -35,6 +35,10 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
    only to descriptors passing the criterion defined by 
    \code{phi.min}.
 }
+  \item{wordy}{
+   logical. If \code{TRUE} status messages and output tables are shown.
+}
+
 }
 \details{
    \code{phi.min} is based on the standardized \emph{phi} value according to 
@@ -46,8 +50,12 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05)
    \emph{p} <= 0.01: **, \emph{p} <= 0.001: ***).}
    \item{n}{matrix with cluster sizes.}
    \item{thresholds}{\code{phi.min} and \code{p.max} used.} 
-   \item{typical}{dataframe with items (often species) typically found in 
-   clusters (according to \code{thresholds}).}
+   \item{typical}{text with items (often species) typically 
+     found in clusters (according to \code{thresholds}).}
+   \item{typical_vector}{\code{typical} as a single character vector.}
+   \item{isopam_indicators}{items (species) used as indicators in the
+     original \code{isopam} clustering process.}
+
 }
 \references{
    \enc{Chitrý}{Chitry}, M., \enc{Tichý}{Tichy}, L., Holt, J., 

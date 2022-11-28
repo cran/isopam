@@ -1,9 +1,30 @@
 isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
                              l.max = FALSE, stopat = c(1,7), sieve = TRUE,
                              Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-                             k.max = 100, d.max = 7, ..., juice = FALSE)
+                             k.max = 100, d.max = 7, juice = FALSE,
+                             progressbars = TRUE, wordy = TRUE, ...)
 {
 
+  # Make sure that the distance measure is available
+  vegdists <- c("manhattan", "euclidean", "canberra", "bray",
+                "kulczynski", "gower", "morisita", "horn",
+                "mountford", "jaccard", "raup", "binomial", "chao",
+                "altGower", "cao", "mahalanobis", "clark", "chisq", 
+                "chord", "hellinger", "aitchison", "robust.aitchison")
+  method <- pmatch(distance, vegdists)
+
+  if (is.na(method)) {
+    if (requireNamespace("proxy", quietly = TRUE)) {         
+      proxydists <- rownames(as.data.frame(proxy::pr_DB))
+      method <- distance %in% proxydists
+      if (method == FALSE) { 
+        stop("Distance measure unknown")         
+      }    
+    } else { 
+      stop("Distance measure unknown. You could try with library proxy")
+    }
+  }
+  
   if (!is.null (centers)) c.fix <- length (centers)
 
   ## Make backwards compatible (this is mainly for use with Juice)
@@ -56,6 +77,13 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     c.max <- c.fix
   }
 
+  # Make sure that handlers are reset on exit
+  oh <- progressr::handlers()
+  on.exit(progressr::handlers(oh), add = TRUE)
+  # Setup progressbar
+  progressr::handlers("progress")
+  if (getRversion() >= 4) progressr::handlers(global = progressbars)
+
   ## ----------- core function ---------------------------------------------- ##
 
   core <- function (xdat)
@@ -76,9 +104,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
     ## Distance matrix
     dst.xdat <- try (vegan::vegdist (xdat, method = distance), silent = TRUE)
-    ## if vegan does not work try with package proxy
-    if (methods::is(dst.xdat, 'try-error'))
-    {
+    ## if vegan does not work use package proxy
+    if (methods::is(dst.xdat, 'try-error')) {
       dst.xdat <- proxy::dist (xdat, method = distance)
     }
 
@@ -129,15 +156,7 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       if (c.max < 2) stop ('c.max < 2')
     }
     if (c.opt == FALSE && !is.numeric (c.fix)) c.max <- 2
-
-    ## Prepare progress bar
-    ## Problem: Overestimation of d.loops in case of neg. eigenvalues in isomap
-    b.loops <- (k.max - k.min) + 1
-    d.loops <- d.max - 1
-    pb.mx <- (b.loops * d.loops)
-    pb <- txtProgressBar (min = 0, max = pb.mx, char = '.',
-                          width = 45, style = 3)
-
+   
     ## Prepare output array
 
     ## Need a place to store the calculations done in the g2 loop
@@ -148,7 +167,7 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     underdrive <- FALSE
     if (!exists ('DDD_lookup_table'))
     {
-      print ('Memory issues - shifting to low gear', quote = FALSE)
+      if (wordy == TRUE) print ('Memory issues - shifting to low gear', quote = FALSE)
       underdrive <- TRUE
     }
 
@@ -157,19 +176,26 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
     ## ----------- Start the big loops .... ---------------------------- ##
     rg.k <- k.max - k.min
-
+  
     # Criterion for parallel processing subject to further experiments:
     if(rg.k > 50){
 
-    future::plan(future::multisession)
+    future::plan(future::multisession)   
 
+    ## Prepare progress bar
+    pb <- progressr::progressor(along = k.min:k.max)
+    
     out.array <- array(future.apply::future_sapply(k.min:k.max, function(b)  ## b-loop: Isomap k
     {
-      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+      
+      suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+      
       ## this is for post R-2.13 versions:
       d.max.new <- min (sum (isom$eig > 0), ncol (isom$points), d.max, na.rm = T)
       out.mat <- matrix(NA,nrow= d.max-1, ncol = c.max-c.min+1 )
+      
 
+      ## d-Loops
       for (d in 2:d.max.new)
       {
 
@@ -346,19 +372,29 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
           ######################################################################
 
         }
-        setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
       }
       return(out.mat)
+
+      ## Update progress
+      pb()
+
     }), dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))
+    
     }else{
+    
+    # Prepare progress bar
+    pb <- progressr::progressor(along = k.min:k.max)
+
     future::plan(future::sequential)
-    out.array<-array(sapply(k.min:k.max, function(b)  ## b-loop: Isomap k
+    out.array <- array(sapply(k.min:k.max, function(b)  ## b-loop: Isomap k
     {
-        suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+      
+        suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+
         ## this is for post R-2.13 versions:
         d.max.new <- min (sum (isom$eig > 0), ncol (isom$points), d.max, na.rm = T)
-        out.mat <- matrix(NA,nrow= d.max-1, ncol = c.max-c.min+1 )
-
+        out.mat <- matrix(NA, nrow = d.max - 1, ncol = c.max - c.min + 1 )
+        
         for (d in 2:d.max.new)
         {
 
@@ -439,19 +475,19 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
               G <- (gt - gt.ex) / gt.sd
 
               ## Using predefined indicators
-              if (sieve == 'ind')
-              {
+              if (sieve == 'ind') {
                 glgth <- length (G [xind])
                 if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
                 else out.mat [d-1,e+1-c.min] <- mean (G [xind])
               }
 
               ## Averaging
-              if (sieve == FALSE) out.mat [d-1,e+1-c.min] <- mean (G)
+              if (sieve == FALSE) {
+                out.mat [d-1,e+1-c.min] <- mean (G)
+              }  
 
               ## Standard: Filtering and averaging
-              if (sieve == TRUE)
-              {
+              if (sieve == TRUE) {
                 ## Filtering by G
                 glgth <- length (G [G >= Gs])
                 if (glgth == 0) out.mat [d-1,e+1-c.min] <- NA
@@ -535,13 +571,15 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             ######################################################################
 
           }
-          setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
         }
+
+        # Update progress
+        pb()
+
         return(out.mat)
       }),dim = c(d.max-1,c.max-c.min+1, k.max-k.min+1))
+
     }
-    #
-    close (pb) ## Close progress bar
 
     ## ----------- End parameter search ------------------------------------- ##
 
@@ -589,7 +627,7 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       mc <- wmx.iso [2]-1+c.min; md <- wmx.iso [1]+1; mk <- wmx.iso [3]-1+k.min
 
       ## ----------- Final run ---------------------------------------------- ##
-      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))
+      suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = mk))
       d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
       if (!is.null (centers)) cl.iso <- pam (d.iso, k = mc, medoids = centers,
                                              diss = TRUE, do.swap=FALSE)
@@ -654,6 +692,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi <- round (mean (sG [xind]), 1)
         ## Number of indicators >= Gs
         noi <- length (sG [xind])
+        ## Indicator identities
+        INDN <- colnames(IO.xdat)[xind]
       }
       if (sieve == TRUE)
       {
@@ -661,6 +701,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi <- round (mean (sG [sG >= Gs]), 1)
         ## Number of indicators >= Gs
         noi <- length (sG [sG >= Gs])
+        ## Indicator identities
+        INDN <- colnames(IO.xdat)[sG >= Gs]
       }
       if (sieve == FALSE)
       {
@@ -668,6 +710,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi <- 'NA'
         ## Number of indicators >= Gs
         noi <- 'NA'
+        ## Indicator identities
+        INDN <- 'NA'
       }
 
       ## Was this a good partition?
@@ -688,7 +732,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         d = md,
         noi = noi,
         ivx = ivx,
-        ivi = ivi )
+        ivi = ivi,        
+        indnames = INDN )
     }
     else
     {
@@ -704,7 +749,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         d = NULL,
         noi = NULL,
         ivx = NULL,
-        ivi = NULL )
+        ivi = NULL,         
+        indnames = NULL )
     }
     return (out)
 
@@ -881,8 +927,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
   ## ------------ Isopam call ----------------------------------------------- ##
 
-  print ('Processing level 1', quote = FALSE)
-
+  if (wordy == TRUE) print ('Planning parallel processing and processing level 1 ', quote = FALSE)
+  
   ## Prepare first partition
   IO <- dat
   IO [IO > 0] <- 1
@@ -897,6 +943,9 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
   matr <- matrix (NA, nrow = nrow (dat1), ncol = 1) ## Initiate cluster output
   rownames (matr) <- rownames (dat1)
   colnames (matr) <- 'lev.1'
+
+  ## Initiate container for indicators
+  indlist <- list()
 
   ## Initiate matrix for summary ('analytics')
   summ <- matrix (NA, nrow = 9, ncol = 1)
@@ -913,8 +962,12 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
   ## Run core function
   output <- core (dat1)
+
   ## Fill cluster container
   matr [,1] <- output$clusters
+
+  ## Fill indicator container
+  indlist$'Part.1' <- as.character(output$indnames)
 
   ## Fill summary matrix
   summ [1,1] <- 0                          ## Name
@@ -962,8 +1015,9 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     {
 
       ifelse (sum (spl) == 1, cas <- 'group', cas <- 'groups')
-      if (cas != 0) print (paste ('Level ', count, ': Processing ', sum (spl),
-                                  ' ', cas, sep = ''), quote = FALSE)
+      if (cas != 0 & wordy == TRUE) print (paste ('Level ', count, 
+                                  ': Partitioning ', sum (spl), ' ', 
+                                  cas, sep = ''), quote = FALSE)
       output.sub <- list ()              ## Empty list for results
       count.2 <- 1
       for (j in 1:length (spl))          ## Loop through partitions
@@ -986,9 +1040,8 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
             if (nrow (x.sub) > 2) ## Enough plots left?
             {
-              if (sum (spl) > 1) print (paste ('Group', count.2), quote = FALSE)
-              output.sub [[j]] <- core (data.matrix(x.sub, rownames.force = NA))  ## Clustering
-              #ge?ndert, wegen ge?ndertem Datenformat nach Parallelisierung
+              if (sum (spl) > 1 & wordy == TRUE) print (paste ('Group', count.2), quote = FALSE)
+              output.sub [[j]] <- core (data.matrix(x.sub, rownames.force = NA))  
 
               count.2 <- count.2 + 1
             }
@@ -1091,6 +1144,17 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
           }
         }
 
+        ## Add new indicators to indicator container
+        for (m2 in 1:length (spl))
+        {
+          if (ok.vec [m2] == TRUE)
+          {
+            idx <- length(indlist) + 1
+            indlist[[idx]] <- output.sub[[m2]]$indnames
+          }
+        }    
+        names(indlist) <- colnames(summ)
+
         ## OK, now we have a matrix with cluster affiliations of this level
         ## Repeat the search for splittable units:
 
@@ -1138,6 +1202,9 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       medoids = med,
       analytics = summ,
       dendro = NULL,
+      centers_usr = centers,
+      ind_usr = ind,
+      indicators = indlist,
       dat = dat
     )
   if (ncol (ctb) > 1)
@@ -1149,6 +1216,9 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       medoids = med,
       analytics = summ,
       dendro = dendro,
+      centers_usr = centers,
+      ind_usr = ind,
+      indicators = indlist,
       dat = dat
     )
 
@@ -1175,21 +1245,3 @@ isopamp <-  function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
   invisible (OUT)
 }
-
-  plot.isopam <-
-    function (x, ...)
-    {
-      if (!is.null (x$dendro [1]))
-      {
-        tree <- x$dendro
-        plot (tree, main = format(x$call), ...)
-      }
-      else print ('No cluster hierarchy - nothing to plot', quote = FALSE)
-    }
-
-  identify.isopam <-
-    function (x, ...)
-    {
-      identify (x$dendro, MAXCLUSTER = nrow (x$dat), ...)
-    }
-

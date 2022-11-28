@@ -6,15 +6,17 @@
 ## Imports
     importFrom("grDevices", "bmp", "dev.off")
     importFrom("graphics", "identify")
-    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", "var")
+    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", "var", "as.dendrogram")
     importFrom("utils", "setTxtProgressBar", "txtProgressBar", "write.table")
     importFrom("cluster", "pam", "daisy")
     importFrom("vegan", "vegdist", "distconnected", "isomap")
     importFrom("future", "plan")
     importFrom("future.apply", "future_sapply")
-    importFrom("proxy", "dist")
+    importFrom("progressr", "handlers", "progressor")
+    importFrom("proxy", "dist", "pr_DB")
     importFrom("methods", "is")
 
 ## S3 Methods
     S3method(plot, isopam)
     S3method(identify, isopam)
+    S3method(summary, isopam)

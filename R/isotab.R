@@ -1,5 +1,5 @@
 isotab <-
-function (ip, level = 1, phi.min = "auto", p.max = .05)
+function (ip, level = 1, phi.min = "auto", p.max = .05, wordy = FALSE)
 {
   if (!methods::is(ip, 'isopam')) stop ('Object does not seem to result from Isopam')
   IO <- ip$dat
@@ -10,7 +10,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
 
   if (is.null (ip$hier))
   {
-    if (level > 1) print ("No hierarchy levels available", quote = FALSE)
+    if (level > 1 & wordy == TRUE) message ("No hierarchy levels available")
     tab <- t (aggregate (IO, by = list (ip$flat), FUN = sum))
   }
   else
@@ -19,8 +19,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
     if (level > depth)
     {
       level <- depth
-      print (paste ("Switching to lowest level", depth),
-        quote = FALSE)
+      if (wordy == TRUE) message (paste ("Switching to lowest level", depth))
     }
     tab <- t (aggregate (IO, by = list (ip$hier [,level]), FUN = sum))
   }
@@ -198,11 +197,13 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
   dig1 <- phi.idx [names (phi.idx) %in% names (dia)]
   dig2 <- dig1 [rownames (diag)]
   typ <- list ()
+  ispec <- vector()
   for (i in 1:nc)
   {
-    if (length (names (dig2) [dig2 == i]) > 0)
+    if (length (names (dig2) [dig2 == i]) > 0) {
       typ [i] <- paste (names (dig2) [dig2 == i], collapse = ', ')
-    else typ [i] <- 'Nothing particularly typical'
+      ispec <- c(ispec, names (dig2) [dig2 == i])
+    } else { typ [i] <- 'Nothing particularly typical' }
   }
   names (typ) <- cnam
 
@@ -211,30 +212,35 @@ function (ip, level = 1, phi.min = "auto", p.max = .05)
    tab = FRQ,
    n = siz,
    thresholds = param,
-   typical = typ)
+   typical = typ,
+   typical_vector = ispec,
+   isopam_indicators = ip$indicators )
 
-  ## 16) Output to screen
+  ## 16) Output to screen if desired
 
-  cat ('$tab', fill = TRUE)
-  print (FRQ)
-  cat ('', fill = TRUE)
-  cat ('$n', fill = TRUE)
-  print (siz, quote = FALSE)
-  cat ('', fill = TRUE)
-  cat ('$thresholds', fill = TRUE)
-  print (param, quote = FALSE)
-  cat ('', fill = TRUE)
-  cat ('$typical', fill = TRUE)
+  if (wordy == TRUE) {
+    for (i in 1:nc)
+    {
+      cat (paste ('Typically found in ', cnam [i], ": ", sep =''), fill = TRUE)
+      if (length (names (dig2) [dig2 == i]) > 0)
+        cat (paste (names (dig2) [dig2 == i], collapse = ', '), fill = TRUE)
+      else cat ('Nothing particularly typical', fill = TRUE)
+      cat ('', fill = TRUE)
+    }
 
-  for (i in 1:nc)
-  {
-    cat (paste ('Typically found in ', cnam [i], ": ", sep =''), fill = TRUE)
-    if (length (names (dig2) [dig2 == i]) > 0)
-      cat (paste (names (dig2) [dig2 == i], collapse = ', '), fill = TRUE)
-    else cat ('Nothing particularly typical', fill = TRUE)
+    cat ('$tab', fill = TRUE)
+    print (FRQ)
     cat ('', fill = TRUE)
-  }
+    cat ('$n', fill = TRUE)
+    print (siz, quote = FALSE)
+    cat ('', fill = TRUE)
+    cat ('$thresholds', fill = TRUE)
+    print (param, quote = FALSE)
+    cat ('', fill = TRUE)
+    cat ('$typical', fill = TRUE)
 
+  }
+  
   invisible (isotab.out)
 }
 

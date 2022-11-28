@@ -1,8 +1,30 @@
 isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
                     l.max = FALSE, stopat = c(1,7), sieve = TRUE,
                     Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-                    k.max = 100, d.max = 7, ..., juice = FALSE)
+                    k.max = 100, d.max = 7, juice = FALSE,
+                    progressbars = TRUE, wordy = TRUE, ...)
 {
+
+  # Make sure that the distance measure is available
+  vegdists <- c("manhattan", "euclidean", "canberra", "bray",
+                "kulczynski", "gower", "morisita", "horn",
+                "mountford", "jaccard", "raup", "binomial", "chao",
+                "altGower", "cao", "mahalanobis", "clark", "chisq", 
+                "chord", "hellinger", "aitchison", "robust.aitchison")
+  method <- pmatch(distance, vegdists)
+  
+  if (is.na(method)) {
+    if (requireNamespace("proxy", quietly = TRUE)) {         
+      proxydists <- rownames(as.data.frame(proxy::pr_DB))
+      method <- distance %in% proxydists
+      if (method == FALSE) { 
+        stop("Distance measure unknown")         
+      }    
+    } else { 
+      stop("Distance measure unknown. You could try with library proxy")
+    }
+  }
+  
 
   if (!is.null (centers)) c.fix <- length (centers)
 
@@ -55,6 +77,13 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     c.min <- c.fix
     c.max <- c.fix
   }
+  
+  # Make sure that handlers are reset on exit
+  oh <- progressr::handlers()
+  on.exit(progressr::handlers(oh), add = TRUE)
+  # Setup progressbar
+  progressr::handlers("progress")
+  if (getRversion() >= 4) progressr::handlers(global = progressbars)
 
   ## ----------- core function ---------------------------------------------- ##
 
@@ -73,12 +102,11 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
     ## In case of predefined indicators: which columns?
     if (sieve == 'ind') xind <- which (colnames (xdat) %in% ind)
-
+   
     ## Distance matrix
     dst.xdat <- try (vegan::vegdist (xdat, method = distance), silent = TRUE)
-    ## if vegan does not work try with package proxy
-    if (methods::is(dst.xdat, 'try-error'))
-    {
+    ## if vegan does not work use package proxy
+    if (methods::is(dst.xdat, 'try-error')) {
       dst.xdat <- proxy::dist (xdat, method = distance)
     }
 
@@ -131,14 +159,6 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     }
     if (c.opt == FALSE && !is.numeric (c.fix)) c.max <- 2
 
-    ## Prepare progress bar
-    ## Problem: Overestimation of d.loops in case of neg. eigenvalues in isomap
-    b.loops <- (k.max - k.min) + 1
-    d.loops <- d.max - 1
-    pb.mx <- (b.loops * d.loops)
-    pb <- txtProgressBar (min = 0, max = pb.mx, char = '.',
-      width = 45, style = 3)
-
     ## Prepare output array
     out.array <- array (NA, dim = c(10, k.max, c.max))
 
@@ -151,7 +171,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     underdrive <- FALSE
     if (!exists ('DDD_lookup_table'))
     {
-      print ('Memory issues - shifting to low gear', quote = FALSE)
+      if (wordy == TRUE) print ('Memory issues - shifting to low gear', quote = FALSE)
       underdrive <- TRUE
     }
 
@@ -160,26 +180,29 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
     ## ----------- Start the big loops .... ---------------------------- ##
 
+    ## Prepare progress bar
+    pb <- progressr::progressor(along = k.min:k.max)
+
     for (b in c(k.min:k.max))  ## b-loop: Isomap k
     {
 
-      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
+      suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
       ## this is for post R-2.13 versions:
       d.max.new <- min (sum (isom$eig > 0), ncol (isom$points))
 
       for (d in 2:d.max.new)
       {
 
-        isodiss <- suppressWarnings (daisy (isom$points[,1:d], metric =
+        isodiss <- suppressWarnings (cluster::daisy (isom$points[,1:d], metric =
           'euclidean', stand = TRUE))
 
         for (e in c.min:c.max) ## e-loop: Cluster no.
         {
           ## --------- Partitioning (PAM) ------------------------------------ #
 
-          if (!is.null (centers)) cl.iso <- pam (isodiss, k = e, medoids = centers,
+          if (!is.null (centers)) cl.iso <- cluster::pam (isodiss, k = e, medoids = centers,
             diss = TRUE, do.swap = FALSE)
-          else cl.iso <- pam (isodiss, k = e, diss = TRUE) ## PAM
+          else cl.iso <- cluster::pam (isodiss, k = e, diss = TRUE) ## PAM
           cl <- cl.iso$clustering                     ## Group affiliation
           ci <- cl.iso$clusinfo[,1]                   ## Cluster size
 
@@ -343,11 +366,10 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
           ######################################################################
 
         }
-        setTxtProgressBar (pb, ((b - k.min) * (d.max - 1)) + d - 1)
       }
+      ## Update progress
+      pb()
     }
-
-    close (pb) ## Close progress bar
 
     ## ----------- End parameter search ------------------------------------- ##
 
@@ -395,11 +417,11 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       mc <- wmx.iso [3]; md <- wmx.iso [1]; mk <- wmx.iso [2]
 
       ## ----------- Final run ---------------------------------------------- ##
-      suppressWarnings (isom <- isomap (dst.xdat, ndim = d.max, k = mk))
-      d.iso <- daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
-      if (!is.null (centers)) cl.iso <- pam (d.iso, k = mc, medoids = centers,
+      suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = mk))
+      d.iso <- cluster::daisy (isom$points[,1:md], metric = 'euclidean', stand = TRUE)
+      if (!is.null (centers)) cl.iso <- cluster::pam (d.iso, k = mc, medoids = centers,
         diss = TRUE, do.swap=FALSE)
-      else cl.iso <- pam (d.iso, k = mc, diss = TRUE)
+      else cl.iso <- cluster::pam (d.iso, k = mc, diss = TRUE)
 
       CLS <- cl.iso$clustering                 ## Group affiliation
       MDS <- cl.iso$medoids                    ## Medoids
@@ -460,6 +482,8 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi <- round (mean (sG [xind]), 1)
         ## Number of indicators >= Gs
         noi <- length (sG [xind])
+        ## Indicator identities
+        INDN <- colnames(IO.xdat)[xind]
       }
       if (sieve == TRUE)
       {
@@ -467,13 +491,17 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         ivi <- round (mean (sG [sG >= Gs]), 1)
         ## Number of indicators >= Gs
         noi <- length (sG [sG >= Gs])
-      }
+        ## Indicator identities
+        INDN <- colnames(IO.xdat)[sG >= Gs]
+     }
       if (sieve == FALSE)
       {
         ## Averaged G (only indicators)
         ivi <- 'NA'
         ## Number of indicators >= Gs
         noi <- 'NA'
+        ## Indicator identities
+        INDN <- 'NA'
       }
 
       ## Was this a good partition?
@@ -492,9 +520,10 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         k.max = k.max,
         k = mk,
         d = md,
-        noi = noi,
-        ivx = ivx,
-        ivi = ivi )
+        noi = noi,         # Number of indicators
+        ivx = ivx,         # Averaged G (all)
+        ivi = ivi,         # Averaged G (indicators)
+        indnames = INDN)   # Indicators used    
     }
     else
     {
@@ -510,7 +539,8 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         d = NULL,
         noi = NULL,
         ivx = NULL,
-        ivi = NULL )
+        ivi = NULL,
+        indnames = NULL )
     }
     return (out)
   }
@@ -686,7 +716,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
   ## ------------ Isopam call ----------------------------------------------- ##
 
-  print ('Processing level 1', quote = FALSE)
+  if (wordy == TRUE) print ('Partitioning level 1', quote = FALSE)
 
   ## Prepare first partition
   IO <- dat
@@ -698,10 +728,13 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
   dat1 <- dat1 [apply (dat1, 1, var) > 0,] ## Omit plots without variance
   if (is.null (dim (dat1))) stop ('Not enough variance in plots')
 
-  ## Initiate container for results
+  ## Initiate container for results (clusters)
   matr <- matrix (NA, nrow = nrow (dat1), ncol = 1) ## Initiate cluster output
   rownames (matr) <- rownames (dat1)
   colnames (matr) <- 'lev.1'
+  
+  ## Initiate container for indicators
+  indlist <- list()
 
   ## Initiate matrix for summary ('analytics')
   summ <- matrix (NA, nrow = 9, ncol = 1)
@@ -722,16 +755,19 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
   ## Fill cluster container
   matr [,1] <- output$clusters
 
+  ## Fill indicator container
+  indlist$'Part.1' <- as.character(output$indnames)
+
   ## Fill summary matrix
-  summ [1,1] <- 0                          ## Name
-  summ [2,1] <- length (output$medoids)    ## No. of subgroups
-  summ [3,1] <- output$d                   ## Isomap dimensions
-  summ [4,1] <- output$k.min               ## Minimum k
-  summ [5,1] <- output$k                   ## Isomap k
-  summ [6,1] <- output$k.max               ## Maximum k
-  summ [7,1] <- output$noi                 ## No. of indicators used
-  summ [8,1] <- format (output$ivi, digits = 3)  ## Mean sG of indicators
-  summ [9,1] <- format (output$ivx, digits = 3)  ## Mean sG of all descriptors
+  summ [1,1] <- 0                                ## Name
+  summ [2,1] <- length (output$medoids)          ## No. of subgroups
+  summ [3,1] <- output$d                         ## Isomap dimensions
+  summ [4,1] <- output$k.min                     ## Minimum k
+  summ [5,1] <- output$k                         ## Isomap k
+  summ [6,1] <- output$k.max                     ## Maximum k
+  summ [7,1] <- output$noi                       ## No. of indicators used
+  summ [8,1] <- format (output$ivi, digits = 3)  ## Ind.Gs
+  summ [9,1] <- format (output$ivx, digits = 3)  ## Global.Gs
 
   ## Medoids
   med <- list ()
@@ -768,7 +804,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     {
 
       ifelse (sum (spl) == 1, cas <- 'group', cas <- 'groups')
-      if (cas != 0) print (paste ('Level ', count, ': Processing ', sum (spl),
+      if (cas != 0 & wordy == TRUE) print (paste ('Level ', count, ': Processing ', sum (spl),
         ' ', cas, sep = ''), quote = FALSE)
       output.sub <- list ()              ## Empty list for results
       count.2 <- 1
@@ -792,7 +828,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
             if (nrow (x.sub) > 2) ## Enough plots left?
             {
-              if (sum (spl) > 1) print (paste ('Group', count.2), quote = FALSE)
+              if (sum (spl) > 1 & wordy == TRUE) print (paste ('Group', count.2), quote = FALSE)
               output.sub [[j]] <- core (x.sub)  ## Clustering
               count.2 <- count.2 + 1
             }
@@ -818,11 +854,11 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
 
       if (stepdown == TRUE)
       {
-        ## Write new clusters to container
+        ## Add new clusters to cluster container
         matr <- cbind (matr, matrix (NA, nrow = nrow (matr), ncol = 1))
         colnames (matr) [ncol (matr)] <- paste ('lev.', ncol (matr), sep = '')
 
-        for (m in 1:length (spl))  ## Fill in values
+        for (m in 1:length (spl))
         {
           if (ok.vec [m] == TRUE)
           {
@@ -869,7 +905,7 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
         {
             if (ok.vec [n] == TRUE)
             {
-              mtb [output.sub [[n]]$medoids, ncol (mtb)] <- 1
+              mtb [output.sub[[n]]$medoids, ncol (mtb)] <- 1
             }
         }
         med [[count]] <- names (mtb [mtb [,ncol (mtb)] == 1, ncol (mtb)])
@@ -895,6 +931,17 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
           }
         }
 
+        ## Add new indicators to indicator container
+        for (m2 in 1:length (spl))
+        {
+          if (ok.vec [m2] == TRUE)
+          {
+            idx <- length(indlist) + 1
+            indlist[[idx]] <- output.sub[[m2]]$indnames
+          }
+        }    
+        names(indlist) <- colnames(summ)
+        
         ## OK, now we have a matrix with cluster affiliations of this level
         ## Repeat the search for splittable units:
 
@@ -942,6 +989,9 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       medoids = med,
       analytics = summ,
       dendro = NULL,
+      centers_usr = centers,
+      ind_usr = ind,
+      indicators = indlist,
       dat = dat
     )
   if (ncol (ctb) > 1)
@@ -953,6 +1003,9 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
       medoids = med,
       analytics = summ,
       dendro = dendro,
+      centers_usr = centers,
+      ind_usr = ind,
+      indicators = indlist,
       dat = dat
     )
 
@@ -980,13 +1033,16 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
   invisible (OUT)
 }
 
+## --------------------- S3 methods --------------------------------------- ##
+
 plot.isopam <-
 function (x, ...)
 {
   if (!is.null (x$dendro [1]))
   {
-    tree <- x$dendro
+    tree <- as.dendrogram(x$dendro)
     plot (tree, main = format(x$call), ...)
+    return(invisible(tree))
   }
   else print ('No cluster hierarchy - nothing to plot', quote = FALSE)
 }
@@ -997,3 +1053,44 @@ function (x, ...)
   identify (x$dendro, MAXCLUSTER = nrow (x$dat), ...)
 }
 
+summary.isopam <- function(object, ...)
+{
+  
+  # Retrieving info and building output
+  nobj <- nrow(object$dat)
+  ana <- object$analytics[-c(4, 6), , drop = FALSE]
+  centers <- object$centers_usr
+  ind <- object$ind_usr
+  r <- list(
+    call = object$call,
+    clusters = object$flat,
+    hierarchy = object$hier,
+    medoids = object$medoids,
+    analytics = object$analytics)     
+  class(r) <- "summary.isopam"
+  
+  # Reporting
+  cat("Call:",format(object$call), "\n")
+  cat("Distance measure:", object$distance, "\n")
+  if (!is.null (centers)) {
+    cat('Supervised mode with medians suggested by user\n')
+  }  
+  if (!is.null (ind)) {
+    cat('Supervised mode with indicators suggested by user\n')
+  }  
+  if (!is.null(centers) & !is.null (ind)) {
+    cat('Supervised mode with medians and indicators suggested by user\n')
+  }
+  if (is.null(object$hier)) {
+    partition <- TRUE    
+    ana <- object$analytics[-1, , drop = FALSE]   
+    cat(nobj, "items grouped in a non-hierarchical partition\n")
+  } else {
+    partition <- FALSE
+    lvl <- length(object$hier)
+    
+    cat(nobj, "items arranged in a cluster tree with", lvl, "levels\n")
+  }
+  print(ana, quote = FALSE)  
+  invisible(r)
+}
