@@ -1,27 +1,36 @@
-isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
+isopam <- function(dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
                     l.max = FALSE, stopat = c(1,7), sieve = TRUE,
                     Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
                     k.max = 100, d.max = 7, juice = FALSE,
-                    progressbars = TRUE, wordy = TRUE, ...)
+                    wordy = TRUE, ...)
 {
 
-  # Make sure that the distance measure is available
+  # Check if the distance measure is available for vegdist or proxy
   vegdists <- c("manhattan", "euclidean", "canberra", "bray",
                 "kulczynski", "gower", "morisita", "horn",
                 "mountford", "jaccard", "raup", "binomial", "chao",
                 "altGower", "cao", "mahalanobis", "clark", "chisq", 
                 "chord", "hellinger", "aitchison", "robust.aitchison")
   method <- pmatch(distance, vegdists)
+  distFunc <- "distFunc1" 
   
+  # If vegan::vegdist does not know the distance try with proxy::dist
+  # and vegan::designdist
   if (is.na(method)) {
     if (requireNamespace("proxy", quietly = TRUE)) {         
       proxydists <- rownames(as.data.frame(proxy::pr_DB))
       method <- distance %in% proxydists
-      if (method == FALSE) { 
-        stop("Distance measure unknown")         
+      
+      if (method == TRUE) {
+        distFunc <- "distFunc2"
+        message("Using proxy::dist")
+      } else {        
+        distFunc <- "distFunc3"
+        message("Trying vegan::designdist")
       }    
     } else { 
-      stop("Distance measure unknown. You could try with library proxy")
+        distFunc <- "distFunc3"
+        message("proxy::dist not available, trying vegan::designdist")
     }
   }
   
@@ -78,13 +87,6 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     c.max <- c.fix
   }
   
-  # Make sure that handlers are reset on exit
-  oh <- progressr::handlers()
-  on.exit(progressr::handlers(oh), add = TRUE)
-  # Setup progressbar
-  progressr::handlers("progress")
-  if (getRversion() >= 4) progressr::handlers(global = progressbars)
-
   ## ----------- core function ---------------------------------------------- ##
 
   core <- function (xdat)
@@ -104,10 +106,14 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     if (sieve == 'ind') xind <- which (colnames (xdat) %in% ind)
    
     ## Distance matrix
-    dst.xdat <- try (vegan::vegdist (xdat, method = distance), silent = TRUE)
-    ## if vegan does not work use package proxy
-    if (methods::is(dst.xdat, 'try-error')) {
+    if (distFunc == "distFunc1") {
+      dst.xdat <- vegan::vegdist (xdat, method = distance)
+    }  
+    if (distFunc == "distFunc2") {
       dst.xdat <- proxy::dist (xdat, method = distance)
+    }
+    if (distFunc == "distFunc3") {
+      dst.xdat <- vegan::designdist (xdat, method = distance)
     }
 
     ## Exit with dignity if N.xdat < 3
@@ -187,64 +193,140 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
     {
 
       suppressMessages (isom <- isomap (dst.xdat, ndim = d.max, k = b)) ## Isomap
-      ## this is for post R-2.13 versions:
+      ## Fixing the maximum of dimensions considered when calculating
+      ## the distance matrix for the isomap space
       d.max.new <- min (sum (isom$eig > 0), ncol (isom$points))
 
-      for (d in 2:d.max.new)
-      {
-
-        isodiss <- suppressWarnings (cluster::daisy (isom$points[,1:d], metric =
-          'euclidean', stand = TRUE))
-
-        for (e in c.min:c.max) ## e-loop: Cluster no.
+      if (d.max.new > 1) {
+        for (d in 2:d.max.new)
         {
-          ## --------- Partitioning (PAM) ------------------------------------ #
+          
+          isodiss <- suppressWarnings (cluster::daisy (isom$points[,1:d], metric =
+            'euclidean', stand = TRUE))
 
-          if (!is.null (centers)) cl.iso <- cluster::pam (isodiss, k = e, medoids = centers,
-            diss = TRUE, do.swap = FALSE)
-          else cl.iso <- cluster::pam (isodiss, k = e, diss = TRUE) ## PAM
-          cl <- cl.iso$clustering                     ## Group affiliation
-          ci <- cl.iso$clusinfo[,1]                   ## Cluster size
-
-          ######################### fast mode ##################################
-
-          if (underdrive == FALSE)
+          for (e in c.min:c.max) ## e-loop: Cluster no.
           {
-            ## For Williams' correction
-            w1 <- N.xdat * sum (1 / ci) - 1
-            w2 <- 6 * N.xdat * (e - 1)
+            ## --------- Partitioning (PAM) ------------------------------------ #
 
-            ## Compute G-values for species (code adapted from Lubomir Tichy)
+            if (!is.null (centers)) cl.iso <- cluster::pam (isodiss, k = e, medoids = centers,
+              diss = TRUE, do.swap = FALSE)
+            else cl.iso <- cluster::pam (isodiss, k = e, diss = TRUE) ## PAM
+            cl <- cl.iso$clustering                     ## Group affiliation
+            ci <- cl.iso$clusinfo[,1]                   ## Cluster size
 
-            gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+            ######################### fast mode ##################################
 
-            for (g1 in 1:SP.xdat)         ## g1-loop through species
+            if (underdrive == FALSE)
             {
-              DDD <- 0
-              spec_frq <- frq.xdat [g1]
-
               ## For Williams' correction
-              willi <- 1 + ((w1 * w3 [g1]) / w2)
+              w1 <- N.xdat * sum (1 / ci) - 1
+              w2 <- 6 * N.xdat * (e - 1)
 
-              ## Mask out entries in cl using appropriate col in IO.xdat
-              groupids <- cl[IO.xdat.logical[,g1]]
+              ## Compute G-values for species (code adapted from Lubomir Tichy)
 
-              for (g.fast in 1:e)             ## g.fast-loop through clusters
+              gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+
+              for (g1 in 1:SP.xdat)         ## g1-loop through species
               {
-                fra1 <- sum (groupids == g.fast)   ## Species occ. in cluster
-                Nj <- ci [g.fast]                  ## Cluster size
+                DDD <- 0
+                spec_frq <- frq.xdat [g1]
 
-                ## Have we calculated this before?
-                DDDadd <- DDD_lookup_table [spec_frq, Nj+1, fra1+1]
+                ## For Williams' correction
+                willi <- 1 + ((w1 * w3 [g1]) / w2)
 
-                if (!is.na(DDDadd))
+                ## Mask out entries in cl using appropriate col in IO.xdat
+                groupids <- cl[IO.xdat.logical[,g1]]
+
+                for (g.fast in 1:e)             ## g.fast-loop through clusters
                 {
-                ## Already existed in the lookup table; use it.
-                  DDD <- DDD + DDDadd
+                  fra1 <- sum (groupids == g.fast)   ## Species occ. in cluster
+                  Nj <- ci [g.fast]                  ## Cluster size
+
+                  ## Have we calculated this before?
+                  DDDadd <- DDD_lookup_table [spec_frq, Nj+1, fra1+1]
+
+                  if (!is.na(DDDadd))
+                  {
+                  ## Already existed in the lookup table; use it.
+                    DDD <- DDD + DDDadd
+                  }
+                  else
+                  {
+                    ## so need to calculate it ...
+                    bom <- spec_frq / N.xdat
+                    bim <- 1 - bom
+                    fra0 <- Nj - fra1
+                    bum <- fra1 / (Nj * bom)
+                    bam <- fra0 / (Nj * bim)
+                    DDDadd <- 0
+                    if (!is.na (bum))
+                      if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum))
+                    if (!is.na (bam))
+                      if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))
+                    DDD <- DDD + DDDadd
+                    ## ... and store for next time
+                    DDD_lookup_table [spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                  }
                 }
-                else
+                DDD <- DDD * 2
+                gt [g1,] <- DDD / willi ## Williams' correction
+              }
+
+              ## Standardization (Botta-Dukat et al. 2005)
+              gt.ex <- e - 1                 ## Expected G
+              gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+              G <- (gt - gt.ex) / gt.sd
+
+              ## Using predefined indicators
+              if (sieve == 'ind')
+              {
+                glgth <- length (G [xind])
+                if (glgth == 0) out.array [d,b,e] <- NA
+                else out.array [d,b,e] <- mean (G [xind])
+              }
+
+              ## Averaging
+              if (sieve == FALSE) out.array [d,b,e] <- mean (G)
+
+              ## Standard: Filtering and averaging
+              if (sieve == TRUE)
+              {
+                ## Filtering by G
+                glgth <- length (G [G >= Gs])
+                if (glgth == 0) out.array [d,b,e] <- NA
+
+                ## Averaging
+                else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
+              }
+            }
+
+            ####################### slow mode ####################################
+
+            if (underdrive == TRUE)
+            {
+              ## For Williams' correction
+              w1 <- N.xdat * sum (1 / ci) - 1
+              w2 <- 6 * N.xdat * (e - 1)
+
+              ## Compute G-values for species (code adapted from Lubomir Tichy)
+
+              gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
+
+              for (g1 in 1:SP.xdat)         ## g1-loop through species
+              {
+                DDD <- 0
+                spec_frq <- frq.xdat [g1]
+
+                ## For Williams' correction
+                willi <- 1 + ((w1 * w3 [g1]) / w2)
+
+                ## Mask out entries in cl using appropriate col in IO.xdat
+                groupids <- cl[IO.xdat.logical[,g1]];
+
+                for (g.slow in 1:e)             ## g.slow-loop through clusters
                 {
-                  ## so need to calculate it ...
+                  fra1 <- sum (groupids == g.slow)   ## Species occ. in cluster
+                  Nj <- ci [g.slow]                  ## Cluster size
                   bom <- spec_frq / N.xdat
                   bim <- 1 - bom
                   fra0 <- Nj - fra1
@@ -256,115 +338,42 @@ isopam <- function (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
                   if (!is.na (bam))
                     if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))
                   DDD <- DDD + DDDadd
-                  ## ... and store for next time
-                  DDD_lookup_table [spec_frq, Nj + 1, fra1 + 1] <- DDDadd
                 }
+                DDD <- DDD * 2
+                gt [g1,] <- DDD / willi ## Williams' correction
               }
-              DDD <- DDD * 2
-              gt [g1,] <- DDD / willi ## Williams' correction
-            }
 
-            ## Standardization (Botta-Dukat et al. 2005)
-            gt.ex <- e - 1                 ## Expected G
-            gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
-            G <- (gt - gt.ex) / gt.sd
+              ## Standardization (Botta-Dukat et al. 2005)
+              gt.ex <- e - 1                 ## Expected G
+              gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
+              G <- (gt - gt.ex) / gt.sd
 
-            ## Using predefined indicators
-            if (sieve == 'ind')
-            {
-              glgth <- length (G [xind])
-              if (glgth == 0) out.array [d,b,e] <- NA
-              else out.array [d,b,e] <- mean (G [xind])
-            }
-
-            ## Averaging
-            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
-
-            ## Standard: Filtering and averaging
-            if (sieve == TRUE)
-            {
-              ## Filtering by G
-              glgth <- length (G [G >= Gs])
-              if (glgth == 0) out.array [d,b,e] <- NA
-
-              ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
-            }
-          }
-
-          ####################### slow mode ####################################
-
-          if (underdrive == TRUE)
-          {
-            ## For Williams' correction
-            w1 <- N.xdat * sum (1 / ci) - 1
-            w2 <- 6 * N.xdat * (e - 1)
-
-            ## Compute G-values for species (code adapted from Lubomir Tichy)
-
-            gt <- matrix (NA, SP.xdat, 1) ## Matrix for G-test results
-
-            for (g1 in 1:SP.xdat)         ## g1-loop through species
-            {
-              DDD <- 0
-              spec_frq <- frq.xdat [g1]
-
-              ## For Williams' correction
-              willi <- 1 + ((w1 * w3 [g1]) / w2)
-
-              ## Mask out entries in cl using appropriate col in IO.xdat
-              groupids <- cl[IO.xdat.logical[,g1]];
-
-              for (g.slow in 1:e)             ## g.slow-loop through clusters
+              ## Using predefined indicators
+              if (sieve == 'ind')
               {
-                fra1 <- sum (groupids == g.slow)   ## Species occ. in cluster
-                Nj <- ci [g.slow]                  ## Cluster size
-                bom <- spec_frq / N.xdat
-                bim <- 1 - bom
-                fra0 <- Nj - fra1
-                bum <- fra1 / (Nj * bom)
-                bam <- fra0 / (Nj * bim)
-                DDDadd <- 0
-                if (!is.na (bum))
-                  if (bum > 0) DDDadd <- DDDadd + (fra1 * log (bum))
-                if (!is.na (bam))
-                  if (bam > 0) DDDadd <- DDDadd + (fra0 * log (bam))
-                DDD <- DDD + DDDadd
+                glgth <- length (G [xind])
+                if (glgth == 0) out.array [d,b,e] <- NA
+                else out.array [d,b,e] <- mean (G [xind])
               }
-              DDD <- DDD * 2
-              gt [g1,] <- DDD / willi ## Williams' correction
-            }
-
-            ## Standardization (Botta-Dukat et al. 2005)
-            gt.ex <- e - 1                 ## Expected G
-            gt.sd <- sqrt (2 * gt.ex)      ## Expected sd
-            G <- (gt - gt.ex) / gt.sd
-
-            ## Using predefined indicators
-            if (sieve == 'ind')
-            {
-              glgth <- length (G [xind])
-              if (glgth == 0) out.array [d,b,e] <- NA
-              else out.array [d,b,e] <- mean (G [xind])
-            }
-
-            ## Averaging
-            if (sieve == FALSE) out.array [d,b,e] <- mean (G)
-
-            ## Standard: Filtering and averaging
-            if (sieve == TRUE)
-            {
-              ## Filtering by G
-              glgth <- length (G [G >= Gs])
-              if (glgth == 0) out.array [d,b,e] <- NA
 
               ## Averaging
-              else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
+              if (sieve == FALSE) out.array [d,b,e] <- mean (G)
+
+              ## Standard: Filtering and averaging
+              if (sieve == TRUE)
+              {
+                ## Filtering by G
+                glgth <- length (G [G >= Gs])
+                if (glgth == 0) out.array [d,b,e] <- NA
+
+                ## Averaging
+                else out.array [d,b,e] <- mean (G [G >= Gs]) * glgth
+              }
             }
+
+            ######################################################################
+
           }
-
-          ######################################################################
-
         }
       }
       ## Update progress

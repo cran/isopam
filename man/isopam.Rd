@@ -20,17 +20,17 @@
        can be added for a supervised classification.
      }
      \usage{
-     isopam (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
+     isopam(dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             l.max = FALSE, stopat = c(1,7), sieve = TRUE,
             Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
             k.max = 100, d.max = 7, juice = FALSE,
-            progressbars = TRUE, wordy = TRUE, \dots)
+            wordy = TRUE, \dots)
 
-     isopamp (dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
+     isopamp(dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
             l.max = FALSE, stopat = c(1,7), sieve = TRUE,
             Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
             k.max = 100, d.max = 7, juice = FALSE,
-            progressbars = TRUE, wordy = TRUE, \dots)
+            wordy = TRUE, \dots)
 
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
@@ -84,14 +84,12 @@
 	     \item{distance}{name of a dissimilarity index for the 
          distance matrix used as a starting point for Isomap.
          Any distance measure implemented in packages \pkg{vegan}
-         (partial matches accepted or \pkg{proxy} (exact matches
-         required) can be used (see details).}
+         (predefined or using a designdist equation) or 
+         \pkg{proxy} can be used (see details).}
        \item{k.max}{maximum Isomap \emph{k}.}
        \item{d.max}{maximum number of Isomap dimensions.}
        \item{juice}{logical. If \code{TRUE} input files for Juice are
          generated.}
-       \item{progressbars}{logical. If \code{TRUE} progress bars are
-         shown.}
        \item{wordy}{logical. If \code{TRUE} status messages are shown.}         
        \item{...}{other arguments used by juice or passed to S3 
          functions \code{plot} and \code{identify} (see 
@@ -159,17 +157,20 @@
        \code{identify} works just like \code{identify.hclust}. 
 
        The preset distance measure is Bray-Curtis (Odum 1950).
-       Distance measures are passed to
-       \link[vegan:vegdist]{vegdist} in \pkg{vegan}. If vegan does
-       not know the given measure it is passed to
-       \link[proxy:dist]{dist} in \pkg{proxy}. Measures available
-       in vegan are listed in \link[vegan:vegdist]{vegdist}.
-       Measures registered in \pkg{proxy} can be listed with
-       \code{summary(pr_DB)}. New measures can be defined and 
-       registered as described in \code{?pr_DB}. Isopam can't 
-       deal with distance matrices as a replacement for the 
+       Distance measures are passed to \link[vegan:vegdist]{vegdist}
+       or to \link[vegan:designdist]{designdist} in \pkg{vegan}.
+       If this does not work it is passed to \link[proxy:dist]{dist}
+       in \pkg{proxy}. Measures available in vegan are listed in
+       \link[vegan:vegdist]{vegdist}. Measures registered in \pkg{proxy}
+       can be listed with \code{summary(pr_DB)}. New measures can be
+       defined and registered as described in \code{?pr_DB}. Isopam does
+       not accept distance matrices as a replacement for the 
        original data matrix because it operates on individual 
        descriptors (species).
+       
+       Progress bars are build using \link[progressr:progressor]{progressor}
+       in \pkg{progressr}. Use handlers to switch them on
+       (\code{handlers(global = TRUE)}) and off or to tweak them.
      }
      \references{
        Odum, E.P. (1950): Bird populations in the Highlands (North
