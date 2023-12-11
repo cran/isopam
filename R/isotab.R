@@ -1,31 +1,38 @@
-isotab <-
-function (ip, level = 1, phi.min = "auto", p.max = .05, wordy = FALSE)
+isotab <- function(ip, level = NULL, phi.min = "auto", p.max = .05, wordy = FALSE)
 {
-  if (!methods::is(ip, 'isopam')) stop ('Object does not seem to result from Isopam')
+  if (!methods::is(ip, 'isopam')) stop('Object does not seem to result from Isopam')
   IO <- ip$dat
-  IO [IO > 0] <- 1
-  N <- nrow (IO)
-  SP <- ncol (IO)
-  frq <- t (as.matrix (colSums (IO)))
-
-  if (is.null (ip$hier))
+  IO[IO > 0] <- 1
+  N <- nrow(IO)
+  SP <- ncol(IO)
+  frq <- t(as.matrix(colSums(IO)))
+  
+  # If level is NULL set level to lowest hierarchy level
+  if (is.null(level)) {
+    if (is.null(ip$hier)) {
+      level <- 1
+    }
+    else {
+      level <- ncol(ip$hier)
+    }
+  }  
+  # Build table
+  if (is.null(ip$hier))
   {
-    if (level > 1 & wordy == TRUE) message ("No hierarchy levels available")
-    tab <- t (aggregate (IO, by = list (ip$flat), FUN = sum))
-  }
-  else
-  {
-    depth <- ncol (ip$hier)
+    if (level > 1 & wordy == TRUE) message("No hierarchy levels available")
+    tab <- t(aggregate(IO, by = list(ip$flat), FUN = sum))
+  } else {
+    depth <- ncol(ip$hier)
     if (level > depth)
     {
       level <- depth
-      if (wordy == TRUE) message (paste ("Switching to lowest level", depth))
+      if (wordy == TRUE) message(paste("Switching to lowest level", depth))
     }
-    tab <- t (aggregate (IO, by = list (ip$hier [,level]), FUN = sum))
+    tab <- t(aggregate(IO, by = list(ip$hier[, level]), FUN = sum))
   }
 
   ## Fisher's exact test for 2x2 tables
-  fshtest <- function (x)
+  fshtest <- function(x)
   {
     PVAL <- NULL
     m <- sum(x[, 1])
@@ -35,7 +42,7 @@ function (ip, level = 1, phi.min = "auto", p.max = .05, wordy = FALSE)
     lo <- max(0, k - n)
     hi <- min(k, m)
     support <- lo:hi
-    logdc <- dhyper (support, m, n, k, log = TRUE)
+    logdc <- dhyper(support, m, n, k, log = TRUE)
 
     dnhyper <- function(ncp)
     {
@@ -69,71 +76,71 @@ function (ip, level = 1, phi.min = "auto", p.max = .05, wordy = FALSE)
           sum(d[support >= q])
       else sum(d[support <= q])
     }
-    PVAL <- switch ("two.sided", less = pnhyper(x, 1), greater = pnhyper (x, 1,
+    PVAL <- switch("two.sided", less = pnhyper(x, 1), greater = pnhyper(x, 1,
         upper.tail = TRUE), two.sided = {
           relErr <- 1 + 10^(-7)
           d <- dnhyper(1)
-          sum(d [d <= d [x - lo + 1] * relErr])})
-    return (PVAL)
+          sum(d[d <= d[x - lo + 1] * relErr])})
+    return(PVAL)
   }
 
   ## 1) Contingency table
-  cnam <- tab [1,]
-  tab <- tab [-1,]
-  rnam <- rownames (tab)
-  tab <- matrix (as.numeric (tab), nrow = nrow (tab))
-  colnames (tab) <- cnam
-  rownames (tab) <- rnam
+  cnam <- tab[1,]
+  tab <- tab[-1,]
+  rnam <- rownames(tab)
+  tab <- matrix(as.numeric(tab), nrow = nrow(tab))
+  colnames(tab) <- cnam
+  rownames(tab) <- rnam
   nc <- ncol(tab)
 
   ## 2) Calculate phi.min threshold
   if (phi.min == "auto")
-    phi.min <- round (0.483709 + nc * -0.003272 + N * -0.000489 +
-      SP * 0.000384 + sqrt (nc) * -0.01475, 2)
+    phi.min <- round(0.483709 + nc * -0.003272 + N * -0.000489 +
+      SP * 0.000384 + sqrt(nc) * -0.01475, 2)
 
   ## 3) Frequency table
-  if (is.null (ip$hier)) siz <- table (ip$flat) ## Cluster sizes
-  else siz <- table (ip$hier [,level]) ## Cluster sizes
-  spc <- t (as.matrix (siz))[rep (1, nrow (tab)),]
+  if (is.null(ip$hier)) {siz <- table(ip$flat) ## Cluster sizes
+  } else {siz <- table(ip$hier[, level])} ## Cluster sizes
+  spc <- t(as.matrix(siz))[rep(1, nrow(tab)),]
   frq.2 <- tab / spc ## Frequency
-  frq.2 <- round (frq.2 * 100, 0) ## as percentage
+  frq.2 <- round(frq.2 * 100, 0) ## as percentage
 
   ## 4) Fisher's significance table
   ft <- tab
   for (fsp in 1:SP)         ## fsp-loop through species
   {
-    spec_frq <- frq [fsp]
-    spec_io <- IO [,fsp]
+    spec_frq <- frq[fsp]
+    spec_io <- IO[,fsp]
 
     for (fcl in 1:nc)       ## fcl-loop through clusters
     {
-      Nj <- siz [fcl]
-      insd <- tab [fsp, fcl]
+      Nj <- siz[fcl]
+      insd <- tab[fsp, fcl]
       absci <- Nj - insd
       outs <- spec_frq - insd              ## occ. outside
       absco <- N - Nj - outs               ## abs. outside
 
-      fshm <- matrix (c(insd, absci, outs, absco), 2, 2)
-      ft [fsp,fcl] <- fshtest (fshm)
+      fshm <- matrix(c(insd, absci, outs, absco), 2, 2)
+      ft[fsp,fcl] <- fshtest(fshm)
     }
   }
 
   ## 5) Significance symbols
   ft.symb <- ft
-  ft.symb [ft > 0.05] <- ""
-  ft.symb [ft <= 0.05] <- "*"
-  ft.symb [ft <= 0.01] <- "**"
-  ft.symb [ft <= 0.001] <- "***"
+  ft.symb[ft > 0.05] <- ""
+  ft.symb[ft <= 0.05] <- "*"
+  ft.symb[ft <= 0.01] <- "**"
+  ft.symb[ft <= 0.001] <- "***"
 
   ## 6) Combined frequency table with significance symbols
-  frq.ft <- matrix (paste (frq.2, ft.symb, sep = ""),
+  frq.ft <- matrix(paste(frq.2, ft.symb, sep = ""),
       nrow(frq.2), ncol(frq.2))
-  frq.ft <- data.frame (frq.ft)
-  colnames (frq.ft) <- colnames (ft.symb)
-  rownames (frq.ft) <- rownames (ft.symb)
+  frq.ft <- data.frame(frq.ft)
+  colnames(frq.ft) <- colnames(ft.symb)
+  rownames(frq.ft) <- rownames(ft.symb)
 
   ## 7) Standardized phi table
-  S <- 1 / nc                                   ## Constant s (Tichy '06)
+  S <- 1 / nc                                   ## Constant s(Tichy '06)
   cs <- S * N                                   ## new cluster sizes
   phi <- tab
 
@@ -141,106 +148,109 @@ function (ip, level = 1, phi.min = "auto", p.max = .05, wordy = FALSE)
   {
     for (j in 1:nc)
     {
-      insd <- tab [i, j]                        ## original n in cluster j
-      outs <- sum (tab [i,-j])                  ## original n outside cluster j
-      oc <- cs * (insd / siz [j])               ## new n in cluster j
-      on <- (N - cs) * (outs / (N - siz [j]))   ## new n outside cluster j
-      total <- oc + on                          ## new total value
-      phi.1 <- nv <- (N * oc - total * cs)
-      phi.2 <- sqrt (total * cs * (N - total) * (N - cs))
+      insd <- tab[i, j]                       ## original n in cluster j
+      outs <- sum(tab[i,-j])                  ## original n outside cluster j
+      oc <- cs *(insd / siz[j])               ## new n in cluster j
+      on <-(N - cs) *(outs /(N - siz[j]))     ## new n outside cluster j
+      total <- oc + on                        ## new total value
+      phi.1 <- nv <-(N * oc - total * cs)
+      phi.2 <- sqrt(total * cs *(N - total) *(N - cs))
       nv <- phi.1 / phi.2
-      phi [i,j] <- nv
+      phi[i,j] <- nv
     }
   }
-  phi [is.na (phi)] <- 0  ## Replace NaN-values by 0
-
+  phi[is.na(phi)] <- 0  ## Replace NaN-values by 0
+  
   ## Table sorting
   ## 8) .... by phi and frequency
-  phi.idx <- apply (phi, 1, which.max) ## Group affiliation by phi
+  phi.idx <- apply(phi, 1, which.max) ## Group affiliation by phi
   frq.ord <- phi.idx
-  for (i in 1:length(frq.ord)) frq.ord [i] <- frq.2 [i, phi.idx [i]]
-  frq.top <- t (frq) [order (phi.idx, -frq.ord),] ## Sorting
-  ord.top <- names (frq.top)
-  frq.ft.top <- frq.ft [ord.top,]
-  ft <- ft [ord.top,]
-  phi <- phi [ord.top,]
+  for (i in 1:length(frq.ord)) frq.ord[i] <- frq.2[i, phi.idx[i]]
+  frq.top <- t(frq)[order(phi.idx, -frq.ord),] ## Sorting
+  ord.top <- names(frq.top)
+  frq.ft.top <- frq.ft[ord.top,]
+  ft <- ft[ord.top,]
+  phi <- phi[ord.top,]
 
   ## 9) Filter diagnostic species
-  filter1 <- apply (ft, 1, min) <= p.max
-  filter2 <- apply (phi, 1, max) >= phi.min
-  dia <- which (filter1 [filter2 == TRUE] == TRUE) ## diagnostic species
-  n.dia <- length (dia) ## how many diagnostic species
+  filter1 <- apply(ft, 1, min) <= p.max
+  filter2 <- apply(phi, 1, max) >= phi.min
+  dia <- which(filter1[filter2 == TRUE] == TRUE) ## diagnostic species
+  n.dia <- length(dia) ## how many diagnostic species
   if (n.dia == 0) diag <- "No diagnostic species with given thresholds."
-  if (n.dia > 0) diag <- frq.ft.top [names (dia),]
+  if (n.dia > 0) diag <- frq.ft.top[names(dia),]
 
   ## 10) For later use in the bottom part of the tables
-  ord.bot <- names (t (frq) [order (-frq),])
-  frq.ft.b <- frq.ft [ord.bot,]
+  ord.bot <- names(t(frq)[order(-frq),])
+  frq.ft.b <- frq.ft[ord.bot,]
 
   ## 11) Move diagnostic species to top
   if (n.dia > 0)
   {
-    FRQ <- rbind (diag, frq.ft.b [rownames (frq.ft.b) %in%
-      rownames (diag) == FALSE,])
-  }
-  else FRQ <- frq.ft.b
+    FRQ <- rbind(diag, frq.ft.b[rownames(frq.ft.b) %in%
+      rownames(diag) == FALSE,])
+  } else {FRQ <- frq.ft.b}
+  phi <- phi[rownames(FRQ), ]
 
   ## 12) Report cluster sizes
-  siz <- t (as.matrix (siz))
-  rownames (siz) <- "n"
+  siz <- t(as.matrix(siz))
+  rownames(siz) <- "n"
 
   ## 13) Parameters
   param <- c(phi.min, p.max)
-  names (param) <- c("phi.min", "p.max")
+  names(param) <- c("phi.min", "p.max")
 
-  ## 14) Print info about diagnostic species
-  dig1 <- phi.idx [names (phi.idx) %in% names (dia)]
-  dig2 <- dig1 [rownames (diag)]
-  typ <- list ()
+  ## 14) Info about diagnostic species
+  dig1 <- phi.idx[names(phi.idx) %in% names(dia)]
+  dig2 <- dig1[rownames(diag)]
+  typ <- list()
   ispec <- vector()
   for (i in 1:nc)
   {
-    if (length (names (dig2) [dig2 == i]) > 0) {
-      typ [i] <- paste (names (dig2) [dig2 == i], collapse = ', ')
-      ispec <- c(ispec, names (dig2) [dig2 == i])
-    } else { typ [i] <- 'Nothing particularly typical' }
+    if (length(names(dig2)[dig2 == i]) > 0) {
+      typ[i] <- paste(names(dig2)[dig2 == i], collapse = ', ')
+      ispec <- c(ispec, names(dig2)[dig2 == i])
+    } else { typ[i] <- 'Nothing particularly typical' }
   }
-  names (typ) <- cnam
+  names(typ) <- cnam
 
-  ## 15) Output
-  isotab.out <- list (
+  ## 15) Ordered comprehensive table
+  
+  # Cluster assignments
+  if (is.null(ip$hier)) {clusters <- sort(ip$flat)
+  } else {clusters <- sort(ip$flat[[level]])}
+
+  # Sort original table
+  bigtab <- ip$dat
+  bigtab <- bigtab[, rownames(FRQ)]
+  bigtab <- bigtab[names(clusters), ]
+
+  ## 16) Output
+  isotab.out <- list(
    tab = FRQ,
+   phi = phi,
    n = siz,
    thresholds = param,
    typical = typ,
    typical_vector = ispec,
-   isopam_indicators = ip$indicators )
-
-  ## 16) Output to screen if desired
-
-  if (wordy == TRUE) {
-    for (i in 1:nc)
-    {
-      cat (paste ('Typically found in ', cnam [i], ": ", sep =''), fill = TRUE)
-      if (length (names (dig2) [dig2 == i]) > 0)
-        cat (paste (names (dig2) [dig2 == i], collapse = ', '), fill = TRUE)
-      else cat ('Nothing particularly typical', fill = TRUE)
-      cat ('', fill = TRUE)
-    }
-
-    cat ('$tab', fill = TRUE)
-    print (FRQ)
-    cat ('', fill = TRUE)
-    cat ('$n', fill = TRUE)
-    print (siz, quote = FALSE)
-    cat ('', fill = TRUE)
-    cat ('$thresholds', fill = TRUE)
-    print (param, quote = FALSE)
-    cat ('', fill = TRUE)
-    cat ('$typical', fill = TRUE)
-
-  }
+   isopam_indicators = ip$indicators,
+   sorted_table = bigtab)
   
-  invisible (isotab.out)
+  class(isotab.out) <- "isotab"
+
+  invisible(isotab.out)
 }
 
+print.isotab <- function(x, ...)
+{
+    cat("Frequency table\n")
+    print(x$tab)
+    
+    cat("\nCluster sizes\n")
+    print(x$n)
+    
+    cat("\nTypical for clusters\n")
+    print(x$typical)
+
+    invisible(x)
+}

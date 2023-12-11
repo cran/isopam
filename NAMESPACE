@@ -20,3 +20,5 @@
     S3method(plot, isopam)
     S3method(identify, isopam)
     S3method(summary, isopam)
+    S3method(print, isopam)
+    S3method(print, isotab)

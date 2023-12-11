@@ -5,6 +5,7 @@
      \alias{plot.isopam}
      \alias{identify.isopam}
      \alias{summary.isopam}
+     \alias{print.isopam}
      \alias{isopamp}
      \title{Isopam (Clustering)}
      \description{
@@ -35,6 +36,7 @@
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
      \method{summary}{isopam}(object, \dots)
+     \method{print}{isopam}(x, \dots)
      }
      \arguments{
        \item{dat}{data matrix: each row corresponds to an
@@ -95,7 +97,7 @@
          functions \code{plot} and \code{identify} (see 
          \link[stats]{dendrogram} and \link[stats]{hclust}.}
        \item{x}{\code{isopam} result object in methods 
-         \code{plot} and \code{identify}.}
+         \code{plot}, \code{print} and \code{identify}.}
        \item{object}{\code{isopam} result object in method 
        \code{summary}.}
      }
@@ -212,22 +214,22 @@
      \examples{
      ## load data to the current environment
      data(andechs)
-
+     
      ## call isopam with the standard options
      ip<-isopam(andechs)
 
+     ## print function
+     ip
+     
      ## examine cluster hierarchy
      plot(ip)
 
-     ## examine grouping
-     ip$flat
-
      ## examine frequency table (second hierarchy level)
-     isotab(ip, 2)
+     it <- isotab(ip)
+     it
 
      ## non-hierarchical partitioning
-     ip<-isopam(andechs,c.fix=3)
-     ip$flat
-
+     ip<-isopam(andechs,c.fix = 3)
+     ip
      }
      \keyword{ cluster }

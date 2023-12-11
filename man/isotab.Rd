@@ -2,44 +2,43 @@
 \name{isotab}
 \Rdversion{1.1}
 \alias{isotab}
+\alias{print.isotab}
 \title{
 Ordered frequency table for Isopam clusters
 }
 \description{
 Computes an ordered frequency table based on Isopam clustering results. 
 The upper part of the table lists typical descriptors (usually species) with
-a significant binding to single clusters (according to customisable thresholds). 
+a significant binding to individual clusters (according to customisable thresholds). 
 The lower part of the table is ordered by descending overall frequency.  
 }
 \usage{
-isotab(ip, level = 1, phi.min = 'auto', p.max = .05, wordy = FALSE)
+isotab(ip, level = NULL, phi.min = 'auto', p.max = .05, wordy = FALSE)
+\method{print}{isotab}(x, \dots)
 }
 \arguments{
   \item{ip}{
-   object of class \code{isopam}.
-}
+   object of class \code{isopam}.}
   \item{level}{
-   level in cluster hierarchy starting with 1 = first division.
-}
+   level in cluster hierarchy starting with 1 = first division.}
   \item{phi.min}{
    threshold of \emph{phi} determining which descriptors (species) 
    are listed in the upper part of the table. Applies only to 
    descriptors passing the criterion defined by \code{p.max}. If
    \code{phi.min = 'auto'} (the default) isotab suggests a 
    suitable value based on the numbers of clusters, observations, 
-   and descriptors.
-}  
+   and descriptors.}  
   \item{p.max}{
    threshold of Fisher's \emph{p} determining which descriptors 
    (species) are listed in the upper part of the table. Applies 
    only to descriptors passing the criterion defined by 
-   \code{phi.min}.
-}
+   \code{phi.min}.}
   \item{wordy}{
-   logical. If \code{TRUE} status messages and output tables are shown.
-}
-
-}
+   logical. If \code{TRUE} status messages are shown.}
+  \item{x}{\code{isotab} result object in method 
+   \code{print}.}
+  \item{...}{other arguments used by \code{print}.}
+}  
 \details{
    \code{phi.min} is based on the standardized \emph{phi} value according to 
    \enc{Chitrý}{Chitry} et al. 2002.  
@@ -48,14 +47,16 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05, wordy = FALSE)
    \item{tab}{dataframe with ordered frequencies and their significance. 
    The latter is derived from Fisher's exact test (\emph{p} <= 0.05: *, 
    \emph{p} <= 0.01: **, \emph{p} <= 0.001: ***).}
+   \item{phi}{dataframe with standardized phi values.} 
    \item{n}{matrix with cluster sizes.}
-   \item{thresholds}{\code{phi.min} and \code{p.max} used.} 
+   \item{thresholds}{\code{phi.min} and \code{p.max} used for table sorting.} 
    \item{typical}{text with items (often species) typically 
      found in clusters (according to \code{thresholds}).}
    \item{typical_vector}{\code{typical} as a single character vector.}
    \item{isopam_indicators}{items (species) used as indicators in the
      original \code{isopam} clustering process.}
-
+   \item{sorted_table}{original data but with variables (often species)
+     sorted as in \code{tab} and observations sorted by cluster.}
 }
 \references{
    \enc{Chitrý}{Chitry}, M., \enc{Tichý}{Tichy}, L., Holt, J., 
@@ -80,10 +81,9 @@ isotab(ip, level = 1, phi.min = 'auto', p.max = .05, wordy = FALSE)
      
    ## call isopam with the standard options
    ip<-isopam(andechs)
+   ip
     
-   ## build table (uppermost hierarchy level)
-   isotab(ip)
-
-   ## build table (lower hierarchy level)
-   isotab(ip,2)
+   ## build table
+   it <- isotab(ip)
+   it
 }
