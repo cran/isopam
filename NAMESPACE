@@ -1,23 +1,27 @@
 ## Exports
      export(isopam)
-     export(isopamp)
      export(isotab)
 
 ## Imports
     importFrom("grDevices", "bmp", "dev.off")
     importFrom("graphics", "identify")
-    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", "var", "as.dendrogram")
-    importFrom("utils", "setTxtProgressBar", "txtProgressBar", "write.table")
+    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", 
+               "var", "as.dendrogram", "setNames")
+    importFrom("utils", "write.table", "combn")
     importFrom("cluster", "pam", "daisy")
     importFrom("vegan", "vegdist", "distconnected", "isomap")
     importFrom("future", "plan")
     importFrom("future.apply", "future_sapply")
-    importFrom("progressr", "handlers", "progressor")
     importFrom("proxy", "dist", "pr_DB")
     importFrom("methods", "is")
+    importFrom("ggplot2", "ggplot", "aes", "geom_bar", "scale_fill_manual",
+               "labs", "theme_minimal", "theme", "element_text", 
+               "element_blank", "margin", "expand_limits", "coord_cartesian", 
+               "guides", "ggplot_build", "geom_text")
 
 ## S3 Methods
     S3method(plot, isopam)
+    S3method(plot, isotab)
     S3method(identify, isopam)
     S3method(summary, isopam)
     S3method(print, isopam)

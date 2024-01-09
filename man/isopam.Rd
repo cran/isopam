@@ -6,32 +6,22 @@
      \alias{identify.isopam}
      \alias{summary.isopam}
      \alias{print.isopam}
-     \alias{isopamp}
      \title{Isopam (Clustering)}
      \description{
        Isopam classification is performed either as a
-       hierarchical, divisive method, or as non-hierarchical
-       partitioning. Optimizes clusters and optionally cluster
-       numbers for maximum performance of group indicators.
-       Developed for matrices representing species abundances
-       in plots and with a diagnostic species approach in
-       mind, thus optimizing the concentration of indicative
-       species in groups. Apart from from the default auto-pilot 
-       mode, predefined indicative species and cluster medoids 
-       can be added for a supervised classification.
+       hierarchical, divisive method or as non-hierarchical
+       partitioning. Isopam is designed for matrices 
+       representing species abundances in plots and with a 
+       diagnostic species approach in mind. It optimises 
+       clusters and cluster numbers for concentration of 
+       indicative species in groups. Predefined indicative 
+       species and cluster medoids can optionally be added 
+       for a semi-supervised classification.
      }
      \usage{
-     isopam(dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
-            l.max = FALSE, stopat = c(1,7), sieve = TRUE,
-            Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-            k.max = 100, d.max = 7, juice = FALSE,
-            wordy = TRUE, \dots)
-
-     isopamp(dat, c.fix = FALSE, c.opt = TRUE, c.max = 6,
-            l.max = FALSE, stopat = c(1,7), sieve = TRUE,
-            Gs = 3.5, ind = NULL, centers = NULL, distance = 'bray',
-            k.max = 100, d.max = 7, juice = FALSE,
-            wordy = TRUE, \dots)
+     isopam(dat, c.fix = FALSE, c.max = 6, l.max = FALSE, stopat = c(1,7),
+            sieve = TRUE, Gs = 3.5, ind = NULL, centers = NULL, 
+            distance = 'bray', k.max = 100, d.max = 7, juice = FALSE, \dots)
 
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
@@ -46,14 +36,10 @@
          3 rows (plots) are required.}
        \item{c.fix}{number of clusters (defaults to \code{FALSE}).
          If a number is given, non-hierarchical partitioning is
-         performed, \code{c.opt} and \code{c.max} are ignored and
-         \code{l.max} is set to one.}
-       \item{c.opt}{if \code{TRUE} (the default) cluster
-         numbers are optimized in the range between 2 and
-         \code{c.max} (slow and thorough). If \code{FALSE}
-         groups are divided into two subgroups (quick and dirty).}
+         performed, \code{c.max} is ignored and \code{l.max} is 
+         set to one.}
        \item{c.max}{maximum number of clusters per partition.
-         Applies to all partitioning steps if \code{c.opt = TRUE}.}
+         Applies to all splits.}
        \item{l.max}{maximum number of hierarchy levels. Defaults
          to \code{FALSE} (no maximum number). Note that divisions
          may stop well before this number is reached (see
@@ -62,27 +48,28 @@
        \item{stopat}{vector with stopping rules for hierarchical
          clustering. Two values define if a partition should be
          retained in hierarchical clustering: the first determines
-         how many indicators must be present per cluster, the second
-         defines the standardized G-value that must be reached by
-         these indicators. \code{stopat} is not effective at the first
-         hierarchy level or in non-hierarchical partitioning.}
+         how many indicator species must be present per cluster, 
+         the second defines the standardized G-value that must be 
+         reached by these indicators. \code{stopat} is not effective 
+         at the first hierarchy level or in non-hierarchical 
+         partitioning.}
        \item{sieve}{logical. If \code{TRUE} (the deafult), only
-         descriptors (species) exceeding a threshold defined by
-         \code{Gs} are used in the search for a good clustering
-         solution. Their number is multiplied with their mean
-         standardized G-value. The product is used as optimality
-         criterion. If \code{FALSE} all descriptors are used for
-         optimization.}
-       \item{Gs}{threshold (standardized G value) for descriptors
-         (species) to be considered in the search for a good
-         clustering solution. Effective with \code{sieve = TRUE}.}
+         species exceeding a threshold defined by \code{Gs} are 
+         used in the search for a good clustering solution. Their 
+         number is multiplied with their mean standardized G-value. 
+         The product is used as optimality criterion. If \code{FALSE} 
+         all species are used for optimization.}
+       \item{Gs}{threshold (standardized G value) for species
+         to be considered in the search for a good clustering solution. 
+         Effective with \code{sieve = TRUE}.}
        \item{ind}{optional vector of column names from \code{dat}
-         defining descriptors (species) used as indicators. This
-         turns Isopam in an expert system. Replaces the automated
-         selection of indicators with \code{sieve = TRUE}
-         (\code{ind} overrules \code{sieve}).}
-       \item{centers}{optional vector with observations used as
-	       cluster cores (supervised classification).}
+         defining species used as indicators. This turns Isopam 
+         in an expert system. Replaces the automated selection of 
+         indicators with \code{sieve = TRUE} (\code{ind} overrules 
+         \code{sieve}).}
+       \item{centers}{optional vector with indices (numeric) or 
+         names (character) of observations used as cluster cores 
+         (supervised classification).}
 	     \item{distance}{name of a dissimilarity index for the 
          distance matrix used as a starting point for Isomap.
          Any distance measure implemented in packages \pkg{vegan}
@@ -91,15 +78,14 @@
        \item{k.max}{maximum Isomap \emph{k}.}
        \item{d.max}{maximum number of Isomap dimensions.}
        \item{juice}{logical. If \code{TRUE} input files for Juice are
-         generated.}
-       \item{wordy}{logical. If \code{TRUE} status messages are shown.}         
+         generated.} 
        \item{...}{other arguments used by juice or passed to S3 
          functions \code{plot} and \code{identify} (see 
-         \link[stats]{dendrogram} and \link[stats]{hclust}.}
+         \link[stats]{dendrogram} and \link[stats]{hclust}).}
        \item{x}{\code{isopam} result object in methods 
          \code{plot}, \code{print} and \code{identify}.}
        \item{object}{\code{isopam} result object in method 
-       \code{summary}.}
+         \code{summary}.}
      }
      \value{
        \item{call}{generating call}
@@ -112,7 +98,7 @@
        \item{medoids}{observations (plots) representing the
          medoids of the resulting groups.}
        \item{analytics}{table summarizing parameter settings for
-         the final partitioning steps. \code{Name}: name of the
+         the partitioning steps. \code{Name}: name of the
          respective parent cluster (0 in case of the first partition);
          \code{Subgroups}: number of subgroups; \code{Isomap.dim}:
          Isomap dimensions used; \code{Isomap.k.min}: minimum
@@ -122,10 +108,10 @@
          reaching or exceeding \code{Gs}; \code{Ind.Gs}: the average
          standardized G value of these indicators; and
          \code{Global.Gs}: the average standardized G value of all
-         descriptors.}
+         descriptors (species).}
        \item{centers_usr}{Cluster centers suggested by user.}
        \item{ind_usr}{Indicators suggested by user.}
-       \item{indicators}{Indicators used in each partition.}
+       \item{indicators}{Indicators used.}
        \item{dendro}{an object of class \code{hclust} representing
          the clustering (as used by \code{plot}). Not present
          with only one level of partitioning.}
@@ -137,42 +123,41 @@
        et al. 2000; \link[vegan]{isomap} in \pkg{vegan}) and
        partitioning of the resulting ordination space (PAM: Kaufman
        & Rousseeuw 1990; \link[cluster:pam]{pam} in \pkg{cluster}).
-       The classification is performed either
-       as a hierarchical, divisive method, or as non-hierarchical
-       partitioning. Compared to other clustering methods, it has
-       the following features: (a) it optimizes partitions for the
-       performance of group indicators (typically species) or for
-       maximum average 'fidelity' of descriptors to groups; (b) it
-       optionally selects the number of clusters per division; (c)
-       the shapes of groups in feature space are not limited to
-       spherical or other regular geometric shapes (thanks
-       to the underlying Isomap algorithm) and (d) the distance measure
+       The classification is performed either as a hierarchical, 
+       divisive method, or as non-hierarchical partitioning. It has 
+       the following features: partitions are optimized for the 
+       occurrence of species with high fidelity to groups; it 
+       optionally selects the number of clusters per division; 
+       the shapes of groups in feature space are not restricted to 
+       spherical or other regular geometric shapes (thanks to the 
+       underlying Isomap algorithm); the distance measure 
        used for the initial distance matrix can be freely defined.
-
-       The parallelised version of isopam is \link{isopamp}.
-       Depending on your device, parallelisation offers a
-       considerable speed advantage with most large objects but
-       no advantage or even slow-down with small objects.
-
-       \code{plot} creates (and silently returns) an object of class 
-       \code{dendrogram} and calls the S3 plot method for that class.
-       \code{identify} works just like \code{identify.hclust}. 
-
+       
+       In semi-supervised mode, clusters are build around the provided
+       medoids. Pre-defined indicator species are not as constraining,
+       even if preference is given to cluster solutions in which their
+       fidelity is maximized. It depends on the data how much they affect 
+       the result.
+       
        The preset distance measure is Bray-Curtis (Odum 1950).
        Distance measures are passed to \link[vegan:vegdist]{vegdist}
        or to \link[vegan:designdist]{designdist} in \pkg{vegan}.
        If this does not work it is passed to \link[proxy:dist]{dist}
        in \pkg{proxy}. Measures available in vegan are listed in
-       \link[vegan:vegdist]{vegdist}. Measures registered in \pkg{proxy}
-       can be listed with \code{summary(pr_DB)}. New measures can be
-       defined and registered as described in \code{?pr_DB}. Isopam does
-       not accept distance matrices as a replacement for the 
-       original data matrix because it operates on individual 
-       descriptors (species).
-       
-       Progress bars are build using \link[progressr:progressor]{progressor}
-       in \pkg{progressr}. Use handlers to switch them on
-       (\code{handlers(global = TRUE)}) and off or to tweak them.
+       \link[vegan:vegdist]{vegdist}. Isopam does not accept distance 
+       matrices as a replacement for the original data matrix because 
+       it operates on individual descriptors (species).
+
+       Isopam is slow with large data sets. It switches to a slow mode
+       when an internally used lookup array for the results of the
+       search for an optimal parameterisation (selection of Isomap 
+       dimensions and -\emph{k}, optionally selection of cluster numbers) 
+       does not fit into RAM.
+
+       \code{plot} creates (and silently returns) an object of class 
+       \code{dendrogram} and calls the S3 plot method for that class.
+       \code{identify} works just like \code{identify.hclust}. 
+
      }
      \references{
        Odum, E.P. (1950): Bird populations in the Highlands (North
@@ -191,17 +176,9 @@
        \emph{Science} \bold{290}, 2319--2323.
      }
      \note{
-       For large datasets, consider using the \code{isopamp} function 
-       instead of \code{isopam}. However, the optimization procedure 
-       (selection of Isomap dimensions and -\emph{k}, optionally selection 
-       of cluster numbers) is based on a brute force approach that takes 
-       its time with large data sets. If used with data not representing
-       species in plots make sure that the indicator approach is
-       appropriate.
-
-       With very small datasets, the indicator based optimization may fail.
-       In such cases consider using \code{filtered = FALSE} instead of
-       the default method.
+       With very small datasets, the indicator based optimization may 
+       fail. In such cases consider using \code{sieve = FALSE} instead 
+       of the default method.
      }
      \author{
        Sebastian Schmidtlein with contributions from Jason Collison and
@@ -209,14 +186,16 @@
        }
      \seealso{
        \code{\link{isotab}} for a table of descriptor (species)
-       frequency in clusters.
+       frequencies in clusters and fidelity measures. There is a plot 
+       method associated to \code{\link{isotab}} objects that visualizes 
+       species fidelities to clusters.
      }
      \examples{
      ## load data to the current environment
      data(andechs)
      
      ## call isopam with the standard options
-     ip<-isopam(andechs)
+     ip <- isopam(andechs)
 
      ## print function
      ip
@@ -224,12 +203,32 @@
      ## examine cluster hierarchy
      plot(ip)
 
-     ## examine frequency table (second hierarchy level)
+     ## retrieve cluster vectors
+     clusters <- ip$flat
+     clusters
+     
+     ## same but hierarchical style (available with cluster trees)
+     hierarchy <- ip$hier 
+     hierarchy
+
+     ## frequency table
      it <- isotab(ip)
      it
 
-     ## non-hierarchical partitioning
-     ip<-isopam(andechs,c.fix = 3)
+     ## plot with species fidelities (equalized phi)
+     plot(it)
+
+     ## non-hierarchical partitioning with three clusters
+     ip <- isopam(andechs, c.fix = 3)
      ip
+
+     ## limiting the set of species used in cluster search
+     ip <- isopam(andechs, ind = c("Car_pan", "Sch_fer"), c.fix = 2)
+     ip
+
+     ## supervised mode with fixed cluster medoids
+     ip <- isopam(andechs, centers = c("p20", "p22"))
+     ip
+
      }
      \keyword{ cluster }
