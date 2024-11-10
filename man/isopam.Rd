@@ -21,7 +21,8 @@
      \usage{
      isopam(dat, c.fix = FALSE, c.max = 6, l.max = FALSE, stopat = c(1,7),
             sieve = TRUE, Gs = 3.5, ind = NULL, centers = NULL, 
-            distance = 'bray', k.max = 100, d.max = 7, juice = FALSE, \dots)
+            distance = 'bray', k.max = 100, d.max = 7, juice = FALSE, 
+            polishing = c('strict', 'relaxed'), \dots)
 
      \method{identify}{isopam}(x, \dots)
      \method{plot}{isopam}(x, \dots)
@@ -78,7 +79,13 @@
        \item{k.max}{maximum Isomap \emph{k}.}
        \item{d.max}{maximum number of Isomap dimensions.}
        \item{juice}{logical. If \code{TRUE} input files for Juice are
-         generated.} 
+         generated.}
+       \item{polishing}{treatment of rare or invariant species and 
+         plots with few species. In the case of \code{polishing = "strict"}
+         (default), species with only one occurrence or no variance and plots 
+         with only one species are omitted during clustering. If 
+         \code{"relaxed"} is used, only missing and invariant species and 
+         empty plots are removed.}   
        \item{...}{other arguments used by juice or passed to S3 
          functions \code{plot} and \code{identify} (see 
          \link[stats]{dendrogram} and \link[stats]{hclust}).}
@@ -139,6 +146,15 @@
        fidelity is maximized. It depends on the data how much they affect 
        the result.
        
+       Using \code{polishing = "strict"} reduces noise introduced by rare 
+       species and random outcomes due to species-poor plots, which 
+       consequently are not allocated. If you have the feeling that species 
+       with only one occurrence and plots with only one species should also 
+       contribute to the clustering, work with \code{polishing = "relaxed"}, 
+       where only empty plots and missing species are excluded. This comes at 
+       the risk of noise and unstable results caused by coincidental species
+       occurrences.
+
        The preset distance measure is Bray-Curtis (Odum 1950).
        Distance measures are passed to \link[vegan:vegdist]{vegdist}
        or to \link[vegan:designdist]{designdist} in \pkg{vegan}.
@@ -149,10 +165,10 @@
        it operates on individual descriptors (species).
 
        Isopam is slow with large data sets. It switches to a slow mode
-       when an internally used lookup array for the results of the
-       search for an optimal parameterisation (selection of Isomap 
-       dimensions and -\emph{k}, optionally selection of cluster numbers) 
-       does not fit into RAM.
+       when an internally used lookup array does not fit into RAM. It is used
+       for the results of the search for an optimal parameterisation (selection 
+       of Isomap dimensions and -\emph{k}, optionally selection of cluster 
+       numbers) does not fit into RAM.
 
        \code{plot} creates (and silently returns) an object of class 
        \code{dendrogram} and calls the S3 plot method for that class.

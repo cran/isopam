@@ -1,7 +1,9 @@
-isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
-                    stopat = c(1, 7), sieve = TRUE, Gs = 3.5, ind = NULL,
-                    centers = NULL, distance = "bray", k.max = 100,
-                    d.max = 7, juice = FALSE, ...) {
+isopam <-  function(dat, c.fix = FALSE, c.max = 6, 
+                    l.max = FALSE, stopat = c(1, 7), sieve = TRUE, 
+                    Gs = 3.5, ind = NULL, centers = NULL, 
+                    distance = "bray", k.max = 100, d.max = 7, 
+                    juice = FALSE, polishing = c('strict', 'relaxed'),
+                    ...) {
 
   # Check if the distance measure is available for vegdist or proxy
   vegdists <- c("manhattan", "euclidean", "canberra", "bray",
@@ -64,19 +66,40 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
     colnames(dat) <- seq_len(ncol(dat))
   }
 
-  ## Convert to matrix if necessary
-  nam <- rownames(dat)
+  ## Convert to matrix if necessary while taking care of loosing rownames
+  rownam <- rownames(dat)
+  colnam <- colnames(dat)
   dat <- as.matrix(dat)
-  rownames(dat) <- nam
+  rownames(dat) <- rownam
+  dimdat_orig <- dim(dat)
+  dat_orig <- dat # used later to extract unallocated sites and species
 
-  # Take care that data has enough variance
-  IO <- ifelse(dat > 0, 1, 0)
-  dat <- dat[, colSums(IO) > 1] # Omit species with < 2 occurrence
-  dat <- dat[rowSums(IO) > 1, ] # ... and rows with < 2 species
-  dat <- dat[, apply(dat, 2, var) > 0]
-  dat <- dat[apply(dat, 1, var) > 0, ]
-  if (is.null(dim(dat))) {
-    stop("Not enough variance")
+  # Match the polishing argument
+  polishing <- match.arg(polishing)
+  
+  # Polishing
+  if (polishing == 'strict') {
+    repeat {
+      IO <- ifelse(dat > 0, 1, 0)
+      initial_rows <- nrow(dat)
+      initial_cols <- ncol(dat)
+      dat <- dat[, colSums(IO) > 1] # Species with > 1 occurrence
+      dat <- dat[rowSums(IO) > 1, ] # ... and plots with > 1 species
+      dat <- dat[, apply(dat, 2, var) > 0]
+      if (nrow(dat) == initial_rows && ncol(dat) == initial_cols) {
+        break
+      }
+    }
+  } else if (polishing == 'relaxed') {
+    dat <- dat[, colSums(dat) > 0] # Omit species without occurrence
+    dat <- dat[, apply(dat, 2, var) > 0] # Omit species with no variance
+    dat <- dat[rowSums(dat) > 0, ] # ... and rows without species
+  }
+
+  dimdat <- dim(dat)
+
+  if (is.null(dimdat) | dimdat[1] < 3 | dimdat[2] < 2) {
+      stop("Not enough valid rows or columns")
   }
 
   ## In case of predefined indicator species check their validity
@@ -130,7 +153,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
     ## Some useful descriptors
     N.xdat <- nrow(xdat)                         ## Total number of plots
     SP.xdat <- ncol(xdat)                        ## Total number of species
-    frq.xdat <- t(as.matrix(colSums(IO.xdat))) ## Species frequencies
+    frq.xdat <- t(as.matrix(colSums(IO.xdat)))   ## Species frequencies
 
     ## For Williams` correction
     w3 <- N.xdat *((1 / frq.xdat) +(1 /(N.xdat - frq.xdat))) - 1
@@ -197,75 +220,100 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
     slowmode <- FALSE # Stays FALSE if fast loops are possible
 
-    ## -------------- Conditions for parallel processing --------------- ##
+    ## -------------- Dealing with memory limitations ------------------ ##
 
-    fut <- TRUE # Stays TRUE if parallel processing seems to be possible
-
-    rg.k <- k.max - k.min
-
-    ## Estimate array size
-    byt <- N.xdat * (N.xdat + 1) * (N.xdat + 1) * 8
-    ## Add some tolerance
-    byt <- ceiling(byt / 100000) * 100000
-
-    # Criterion for parallel processing subject to further experiments:
-    if (rg.k >= 50) {
-
-      # Check current memory limit
-      memlim <- unlist(options("future.globals.maxSize"))
-      # In case there is no explicit limit the default applies:
-      if (is.null(memlim)) {
-        memlim <- 524288000
-      }
-
-      # If array is too big, go to non-parallel version. 
-      if (byt > memlim) {
-        fut <- FALSE
-        if (!message_shown) {
-          message("About ", byt, " bytes required. Consider increasing")
-          message("'future.globals.maxSize' in options() if RAM allows")
-          message_shown <<- TRUE
-        }
-      }
-    } else {
-      fut <- FALSE
-    }
-
-    ## ---------- Preparing for fast mode ---------------------------- #
+    # Available RAM
+    sys_info <- ps::ps_system_memory()
+    available_mem <- sys_info$avail
 
     ## Try to prepare output array
     ## Need a place to store the calculations done in the g2 loop
     ## so they may be reused rather than recalculated.
     ## The +1 is due to zeros needing to be indexed as well.
 
-    try(DDD_lookup_table <-
-        array(NA_real_, c(N.xdat, N.xdat + 1, N.xdat + 1)), silent = TRUE)
+    object_size <- 0
+    slowmode <- tryCatch({
+      DDD_lookup_table <- array(NA_real_, c(N.xdat, N.xdat + 1,
+                                N.xdat + 1))
+      object_size <- object.size(DDD_lookup_table)
+      FALSE
+    }, error = function(e) {
+      TRUE
+    })
 
-    # If this did not work, skip fast mode
-    if (!exists("DDD_lookup_table")) {
-        #message("Memory issues - shifting to slow mode")
-        slowmode <- TRUE
+    # Criteria for parallel processing (subject to further experiments)
+    fut <- TRUE # Stays TRUE if parallel processing seems to be possible
+    rg.k <- k.max - k.min
+    # Check current memory limit
+    future_memlim <- unlist(options("future.globals.maxSize"))
+    # In case there is no explicit limit, the default applies:
+    if (is.null(future_memlim)) {
+      future_memlim <- 524288000
+    }
+
+    # Condition: Data set exceeds certain minimum size
+    if (rg.k <= 50) {
+      fut <- FALSE
+    }
+
+    # Condition: In case of fastmode (with lookup array):
+    # lookup fits in mem limit
+    if (!slowmode & object_size > future_memlim) {
+      fut <- FALSE
+    }
+
+    # Reporting
+    if (!already_shown) {
+      # Slowdown alert not only in slowmode but also if
+      # lookup exceeds memory (causing memory swapping)
+      if (slowmode | object_size > available_mem) {
+        message("Hitting memory limit: Expect substantial slowdown")
+      }
+      # Conditional suggestion to increase future mem limit
+      if (!slowmode & object_size > future_memlim & 
+          object_size <= available_mem) {
+        if (object_size >= 10 ^ 9) {
+          obj_siz_unit <- "GB"
+          obj_siz <- round(object_size / 2 ^ 30, 1)
+        } else {
+          obj_siz_unit <- "MB"
+          obj_siz <- round(object_size / 2 ^ 20, 1)
+        }
+        if (available_mem >= 10 ^ 9) {
+          mem_siz_unit <- "GB"
+          mem_siz <- round(available_mem / 2 ^ 30, 1)
+        } else {
+          mem_siz_unit <- "MB"
+          mem_siz <- round(available_mem / 2 ^ 20, 1)
+        }
+        message("At least ", object_size, " bytes (",
+        obj_siz, " ", obj_siz_unit, ") required for the use of a",
+        "  lookup array in parallel operation.")
+        message("Consider increasing 'future.globals.maxSize' if RAM allows.")
+        message("Available memory: ", available_mem, " bytes (", mem_siz,
+                " ", mem_siz_unit, ")")
+      }
+      already_shown <<- TRUE
     }
 
     if (count == 1) {
-      message("Partitioning level 1")
+      message("Level 1: Partitioning .", appendLF = FALSE)
     }
 
     ## ----------- Note ------------------------------ ##
 
-    ## Redundancy in the following code (two large loops in parallel 
-    ## mode and almost identical loops in non-parallel mode) is a 
-    ## feature, as the check for slow or fast mode in the inner loops
+    ## A check for slow or fast mode in the inner loops
     ## would slow down the process by 10% -20%.
 
     ## ----------- Parallel processing --------------- ##
-  
+
     if (fut) {
 
       future::plan(future::multisession)
 
       ## b-loop: Isomap k
-      out.array <- array(future.apply::future_sapply(k.min:k.max, function(b) {
+      out.array <- array(future.apply::future_sapply(k.min:k.max, 
+                         future.seed = TRUE, function(b) {
 
         ## Isomap
         suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
@@ -281,107 +329,118 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
             isodiss <- suppressWarnings(daisy(isom$points[, 1:d], metric =
                                               "euclidean", stand = TRUE))
+            # For fastpam
+            isodiss_vector <- as.vector(isodiss)
 
             for (e in c.min:c.max) { ## e-loop: Cluster no.
 
               ## --------- Partitioning (PAM) ------------------------------- #
 
               if (!is.null(centers)) {
-                cl.iso <- pam(isodiss, k = e, medoids = centers,
+                cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
                               diss = TRUE, do.swap = FALSE)
+                cl <- cl.iso$clustering                     ## Group affiliation
+                ci <- cl.iso$clusinfo[, 1]                  ## Cluster size
               } else {
-                cl.iso <- pam(isodiss, k = e, diss = TRUE) ## PAM
+                cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
+                cl <- cl.iso@assignment
+                ci <- as.numeric(table(cl))
               }
-              cl <- cl.iso$clustering                     ## Group affiliation
-              ci <- cl.iso$clusinfo[, 1]                  ## Cluster size
 
               ## ----------- Start parallel fast mode --------------- ##
 
               if (!slowmode) {
-
-                ## For Williams` correction
-                w1 <- N.xdat * sum(1 / ci) - 1
-                w2 <- 6 * N.xdat * (e - 1)
-
-                ## Compute G-values for species(code adapted from Lubomir Tichy)
-
-                gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                for (g1 in 1:SP.xdat) {        ## g1-loop through species
-
-                  DDD <- 0
-                  spec_frq <- frq.xdat[g1]
-
+                
+                ## Catching a situation where memory limit is hit in fast mode
+                tryCatch({
                   ## For Williams` correction
-                  willi <- 1 + ((w1 * w3[g1]) / w2)
+                  w1 <- N.xdat * sum(1 / ci) - 1
+                  w2 <- 6 * N.xdat * (e - 1)
 
-                  ## Mask out entries in cl using appropriate col in IO.xdat
-                  groupids <- cl[IO.xdat[, g1]]
+                  ## Compute G-values for species(code adapted from Lubomir Tichy)
 
-                  for (g.fast in 1:e) {      ## g.fast-loop through clusters
+                  gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
 
-                    fra1 <- sum(groupids == g.fast)   ## Species occ. in cluster
-                    Nj <- ci[g.fast]                  ## Cluster size
+                  for (g1 in 1:SP.xdat) {        ## g1-loop through species
 
-                    ## Have we calculated this before?
-                    DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
+                    DDD <- 0
+                    spec_frq <- frq.xdat[g1]
 
-                    if (!is.na(DDDadd)) {
-                      ## Already existed in the lookup table; use it.
-                      DDD <- DDD + DDDadd
+                    ## Precompute bom and bim for the current species
+                    bom <- spec_frq / N.xdat
+                    bim <- 1 - bom
+                    
+                    ## For Williams` correction
+                    willi <- 1 + ((w1 * w3[g1]) / w2)
+
+                    ## Mask out entries in cl using appropriate col in IO.xdat
+                    groupids <- cl[IO.xdat[, g1]]
+
+                    for (g.fast in 1:e) {      ## g.fast-loop through clusters
+
+                      fra1 <- sum(groupids == g.fast)   ## Species occ. in cluster
+                      Nj <- ci[g.fast]                  ## Cluster size
+
+                      ## Have we calculated this before?
+                      DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
+
+                      if (!is.na(DDDadd)) {
+                        ## Already existed in the lookup table; use it.
+                        DDD <- DDD + DDDadd
+                      } else {
+                        ## so need to calculate it ...
+                        fra0 <- Nj - fra1
+                        bum <- fra1 / (Nj * bom)
+                        bam <- fra0 / (Nj * bim)
+                        DDDadd <- 0
+                        if (!is.na(bum) && bum > 0) {
+                          DDDadd <- DDDadd + (fra1 * log(bum))
+                        }
+                        if (!is.na(bam) && bam > 0) {
+                          DDDadd <- DDDadd + (fra0 * log(bam))
+                        }
+                        DDD <- DDD + DDDadd
+                        ## ... and store for next time
+                        DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                      }
+                    }
+                    DDD <- DDD * 2
+                    gt[g1, ] <- DDD / willi ## Williams` correction
+                  }
+
+                  ## Standardization(Botta-Dukat et al. 2005)
+                  gt.ex <- e - 1                 ## Expected G
+                  gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
+                  G <- (gt - gt.ex) / gt.sd
+
+                  ## Using predefined indicators
+                  if (usr_ind) {
+                    glgth <- length(G[xind])
+                    if (glgth == 0) {
+                      out.mat[d - 1, e + 1 - c.min] <- NA
                     } else {
-                      ## so need to calculate it ...
-                      bom <- spec_frq / N.xdat
-                      bim <- 1 - bom
-                      fra0 <- Nj - fra1
-                      bum <- fra1 / (Nj * bom)
-                      bam <- fra0 / (Nj * bim)
-                      DDDadd <- 0
-                      if (!is.na(bum) && bum > 0) {
-                        DDDadd <- DDDadd + (fra1 * log(bum))
-                      }
-                      if (!is.na(bam) && bam > 0) {
-                        DDDadd <- DDDadd + (fra0 * log(bam))
-                      }
-                      DDD <- DDD + DDDadd
-                      ## ... and store for next time
-                      DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                      out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
                     }
                   }
-                  DDD <- DDD * 2
-                  gt[g1, ] <- DDD / willi ## Williams` correction
-                }
 
-                ## Standardization(Botta-Dukat et al. 2005)
-                gt.ex <- e - 1                 ## Expected G
-                gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
-                G <- (gt - gt.ex) / gt.sd
-
-                ## Using predefined indicators
-                if (usr_ind) {
-                  glgth <- length(G[xind])
-                  if (glgth == 0) {
-                    out.mat[d - 1, e + 1 - c.min] <- NA
-                  } else {
-                    out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
+                  if (!sieve && !usr_ind) {
+                    out.mat[d - 1, e + 1 - c.min] <- mean(G)
                   }
-                }
 
-                if (!sieve && !usr_ind) {
-                  out.mat[d - 1, e + 1 - c.min] <- mean(G)
-                }
-
-                ## Standard: Filtering and averaging
-                if (sieve && !usr_ind) {
-                  ## Filtering by G
-                  glgth <- length(G[G >= Gs])
-                  if (glgth == 0) {
-                    out.mat[d - 1, e + 1 - c.min] <- NA
-                  } else {
-                    ## Averaging
-                    out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
+                  ## Standard: Filtering and averaging
+                  if (sieve && !usr_ind) {
+                    ## Filtering by G
+                    glgth <- length(G[G >= Gs])
+                    if (glgth == 0) {
+                      out.mat[d - 1, e + 1 - c.min] <- NA
+                    } else {
+                      ## Averaging
+                      out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
+                    }
                   }
-                }
+                }, error = function(e) {
+                  slowmode <- TRUE
+                })
               }
 
               ## ----------- Start parallel slow mode -------------- ##
@@ -402,6 +461,10 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
                   DDD <- 0
                   spec_frq <- frq.xdat[g1]
 
+                  ## Precompute bom and bim for the current species
+                  bom <- spec_frq / N.xdat
+                  bim <- 1 - bom
+
                   ## For Williams` correction
                   willi <- 1 + ((w1 * w3[g1]) / w2)
 
@@ -412,8 +475,6 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
                     fra1 <- sum(groupids == g.slow)   ## Species in cluster
                     Nj <- ci[g.slow]                  ## Cluster size
-                    bom <- spec_frq / N.xdat
-                    bim <- 1 - bom
                     fra0 <- Nj - fra1
                     bum <- fra1 / (Nj * bom)
                     bam <- fra0 / (Nj * bim)
@@ -498,104 +559,119 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
             isodiss <- suppressWarnings(daisy(isom$points[, 1:d], metric =
                                         "euclidean", stand = TRUE))
+            # For fastpam
+            isodiss_vector <- as.vector(isodiss)
 
             for (e in c.min:c.max) { ## e-loop: Cluster no.
 
               ## --------- Partitioning(PAM) ------------------------------ #
 
               if (!is.null(centers)) {
-                cl.iso <- pam(isodiss, k = e, medoids = centers,
+                cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
                               diss = TRUE, do.swap = FALSE)
+                cl <- cl.iso$clustering                     ## Group affiliation
+                ci <- cl.iso$clusinfo[, 1]                  ## Cluster size
               } else {
-                cl.iso <- pam(isodiss, k = e, diss = TRUE) ## PAM
+                cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
+                cl <- cl.iso@assignment
+                ci <- as.numeric(table(cl))
               }
-              cl <- cl.iso$clustering                     ## Group affiliation
-              ci <- cl.iso$clusinfo[,1]                   ## Cluster size
-
+              
               ## ----------- Start non-parallel fastmode --------------- ##
 
               if (!slowmode) {
 
-                ## For Williams` correction
-                w1 <- N.xdat * sum(1 / ci) - 1
-                w2 <- 6 * N.xdat * (e - 1)
-
-                ## Compute G-values for species(code adapted from Lubomir Tichy)
-
-                gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                for (g1 in 1:SP.xdat) {         ## g1-loop through species
-
-                  DDD <- 0
-                  spec_frq <- frq.xdat[g1]
-
+                ## Catching a situation where memory limit is hit in fast mode
+                tryCatch({
                   ## For Williams` correction
-                  willi <- 1 + ((w1 * w3[g1]) / w2)
+                  w1 <- N.xdat * sum(1 / ci) - 1
+                  w2 <- 6 * N.xdat * (e - 1)
 
-                  ## Mask out entries in cl using appropriate col in IO.xdat
-                  groupids <- cl[IO.xdat[, g1]]
+                  ## Compute G-values for species(code adapted from Lubomir Tichy)
 
-                  for (g.fast in 1:e) {   ## g.fast-loop through clusters
+                  gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
 
-                    fra1 <- sum(groupids == g.fast)   ## Species in cluster
-                    Nj <- ci[g.fast]                  ## Cluster size
+                  for (g1 in 1:SP.xdat) {      ## g1-loop through species
 
-                    ## Have we calculated this before?
-                    DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
+                    DDD <- 0
+                    spec_frq <- frq.xdat[g1]
 
-                    if (!is.na(DDDadd)) {
-                      ## Already existed in the lookup table; use it.
-                      DDD <- DDD + DDDadd
+                    ## Precompute bom and bim for the current species
+                    bom <- spec_frq / N.xdat
+                    bim <- 1 - bom
+
+                    ## For Williams` correction
+                    willi <- 1 + ((w1 * w3[g1]) / w2)
+
+                    ## Mask out entries in cl using appropriate col in IO.xdat
+                    groupids <- cl[IO.xdat[, g1]]
+
+                    for (g.fast in 1:e) {   ## g.fast-loop through clusters
+
+                      fra1 <- sum(groupids == g.fast)   ## Species in cluster
+                      Nj <- ci[g.fast]                  ## Cluster size
+
+                      ## Have we calculated this before?
+                      DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
+
+                      if (!is.na(DDDadd)) {
+                        ## Already existed in the lookup table; use it.
+                        DDD <- DDD + DDDadd
+
+                      } else {
+                        ## so need to calculate it ...
+                        fra0 <- Nj - fra1
+                        bum <- fra1 /(Nj * bom)
+                        bam <- fra0 /(Nj * bim)
+                        DDDadd <- 0
+                        if (!is.na(bum) && bum > 0) {
+                          DDDadd <- DDDadd + (fra1 * log(bum))
+                        }
+                        if (!is.na(bam) && bam > 0) {
+                          DDDadd <- DDDadd + (fra0 * log(bam))
+                        }
+                        DDD <- DDD + DDDadd
+
+                        ## ... and store for next time
+                        ## This is the memory bottleneck
+                        DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                      }
+                    }
+
+                    DDD <- DDD * 2
+                    gt[g1,] <- DDD / willi ## Williams" correction
+                  }
+
+                  ## Standardization(Botta-Dukat et al. 2005)
+                  gt.ex <- e - 1                 ## Expected G
+                  gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
+                  G <- (gt - gt.ex) / gt.sd
+
+                  ## Using predefined indicators
+                  if (usr_ind) {
+                    glgth <- length(G[xind])
+                    if (glgth == 0) out.mat[d - 1, e + 1 - c.min] <- NA
+                    else out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
+                  }
+
+                  if (!sieve && !usr_ind) {
+                    out.mat[d - 1, e + 1 - c.min] <- mean(G)
+                  }  
+
+                  ## Standard: Filtering and averaging
+                  if (sieve && !usr_ind) {
+                    ## Filtering by G
+                    glgth <- length(G[G >= Gs])
+                    if (glgth == 0) {
+                      out.mat[d - 1, e + 1 - c.min] <- NA
                     } else {
-                      ## so need to calculate it ...
-                      bom <- spec_frq / N.xdat
-                      bim <- 1 - bom
-                      fra0 <- Nj - fra1
-                      bum <- fra1 /(Nj * bom)
-                      bam <- fra0 /(Nj * bim)
-                      DDDadd <- 0
-                      if (!is.na(bum) && bum > 0) {
-                        DDDadd <- DDDadd + (fra1 * log(bum))
-                      }
-                      if (!is.na(bam) && bam > 0) {
-                        DDDadd <- DDDadd + (fra0 * log(bam))
-                      }
-                      DDD <- DDD + DDDadd
-                      ## ... and store for next time
-                      DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
+                      ## Averaging
+                      out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
                     }
                   }
-                  DDD <- DDD * 2
-                  gt[g1,] <- DDD / willi ## Williams" correction
-                }
-
-                ## Standardization(Botta-Dukat et al. 2005)
-                gt.ex <- e - 1                 ## Expected G
-                gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
-                G <- (gt - gt.ex) / gt.sd
-
-                ## Using predefined indicators
-                if (usr_ind) {
-                  glgth <- length(G[xind])
-                  if (glgth == 0) out.mat[d - 1, e + 1 - c.min] <- NA
-                  else out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
-                }
-
-                if (!sieve && !usr_ind) {
-                  out.mat[d - 1, e + 1 - c.min] <- mean(G)
-                }  
-
-                ## Standard: Filtering and averaging
-                if (sieve && !usr_ind) {
-                  ## Filtering by G
-                  glgth <- length(G[G >= Gs])
-                  if (glgth == 0) {
-                    out.mat[d - 1, e + 1 - c.min] <- NA
-                  } else {
-                    ## Averaging
-                    out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
-                  }
-                }
+                }, error = function(e) {
+                  slowmode <- TRUE
+                })
               }
 
               ## ----------- Start non-parallel slowmode --------------- ##
@@ -615,6 +691,10 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
                   DDD <- 0
                   spec_frq <- frq.xdat[g1]
 
+                  ## Precompute bom and bim for the current species
+                  bom <- spec_frq / N.xdat
+                  bim <- 1 - bom
+
                   ## For Williams` correction
                   willi <- 1 + ((w1 * w3[g1]) / w2)
 
@@ -625,8 +705,6 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
                     fra1 <- sum(groupids == g.slow)   ## Species in cluster
                     Nj <- ci[g.slow]                  ## Cluster size
-                    bom <- spec_frq / N.xdat
-                    bim <- 1 - bom
                     fra0 <- Nj - fra1
                     bum <- fra1 / (Nj * bom)
                     bam <- fra0 / (Nj * bim)
@@ -737,14 +815,15 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
       mk <- wmx.iso[3] - 1 + k.min
 
       ## ----------- Final run ---------------------------------------------- ##
+
       suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = mk))
       d.iso <- daisy(isom$points[, 1:md], metric = "euclidean", stand = TRUE)
 
       if (!is.null(centers)) {
-        cl.iso <- pam(d.iso, k = mc, medoids = centers,
-                                             diss = TRUE, do.swap = FALSE)
+        cl.iso <- cluster::pam(d.iso, k = mc, medoids = centers,
+                      diss = TRUE, do.swap = FALSE)
       } else {
-        cl.iso <- pam(d.iso, k = mc, diss = TRUE)
+        cl.iso <- cluster::pam(d.iso, k = mc, diss = TRUE)
       }
 
       CLS <- cl.iso$clustering                 ## Group affiliation
@@ -756,8 +835,8 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
       ## Contingency table
       tab <- t(aggregate(IO.xdat, by = list(CLS), FUN = sum)[, -1])
       ## Frequency table
-      inf <- matrix(rep(CLI, SP.xdat), nrow = SP.xdat, byrow = TRUE)
-      FRQ <- tab / inf
+      #inf <- matrix(rep(CLI, SP.xdat), nrow = SP.xdat, byrow = TRUE)
+      #FRQ <- tab / inf
 
       ## Prepare Williams` correction
       w1 <- N.xdat * sum(1 / CLI) - 1
@@ -795,7 +874,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
       }
 
       ## Standardization (Botta-Dukat et al. 2005)
-      gt.ex <- mc - 1                        ## Expected G
+      gt.ex <- mc - 1                       ## Expected G
       gt.sd <- sqrt(2 * (mc - 1))           ## Expected sd
       sG <- (g.1 - gt.ex) / gt.sd
 
@@ -803,7 +882,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
       ## Averaged G
       ivx <- round(mean(sG), 1)
       if (usr_ind) {
-        ## Averaged G(only indicators)
+        ## Averaged G (only indicators)
         ivi <- round(mean(sG[xind]), 1)
         ## Number of indicators >= Gs
         noi <- length(sG[xind])
@@ -811,7 +890,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
         INDN <- colnames(IO.xdat)[xind]
       }
       else if (sieve && !usr_ind) {
-        ## Averaged G(only indicators)
+        ## Averaged G (only indicators)
         ivi <- round(mean(sG[sG >= Gs]), 1)
         ## Number of indicators >= Gs
         noi <- length(sG[sG >= Gs])
@@ -819,7 +898,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
         INDN <- colnames(IO.xdat)[sG >= Gs]
       }
       else if (!sieve && !usr_ind) {
-        ## Averaged G(only indicators)
+        ## Averaged G (only indicators)
         ivi <- "NA"
         ## Number of indicators >= Gs
         noi <- "NA"
@@ -872,10 +951,9 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
   }
 
   ## ----------- End core function ----------------------------------------- ##
-  ## ----------- dendrogram function(code: J. Collison, 2009) -------------- ##
+  ## ----------- Dendrogram function(code: J. Collison, 2009) -------------- ##
 
-  create_dendro <- function(clust)
-  {
+  create_dendro <- function(clust) {
     ## Expects a list of vectors containing cluster affiliations
     ## without info about hierarchy(running number).
     ## Returns an object of class "hclust"
@@ -1048,7 +1126,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
 
   # This initializes a variable that prevents a message from showing
   # up multiple times in the core function
-  message_shown <- FALSE
+  already_shown <- FALSE
 
   ## Run core function
   output <- core(dat)
@@ -1100,53 +1178,61 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
   ## -------------- Follow-up runs ------------------------------------------ ##
 
   while(stepdown) {
-    if (l.max != FALSE & count > l.max) {
+    if (l.max & count > l.max) {
       stepdown <- FALSE
     }
     if (stepdown) {
 
-      ifelse(sum(spl) == 1, cas <- "group", cas <- "groups")
+      ifelse(sum(spl) == 1, cas <- "group ", cas <- "groups ")
       if (cas != 0) {
-        message("Level ", count, ": Partitioning ", sum(spl), " ", cas)
+        message("\nLevel ", count, ": Partitioning ", sum(spl), " ", cas, appendLF = FALSE)
       }
       output.sub <- list()              ## Empty list for results
       count.2 <- 1
       for (j in 1:length(spl)) {          ## Loop through partitions
 
-        if (spl[j] == 1) { ## splittable?
+        ## Report progress
+        message(".", appendLF = FALSE)
 
+        if (spl[j] == 1) { ## splittable?
           x.sub <- dat[matr[, ncol(matr)] == j, ] ## Create data subset
 
-          ## Prepare second run
-          IO.x.sub <- x.sub
-          IO.x.sub[IO.x.sub > 0] <- 1
-          x.sub <- x.sub[, colSums(IO.x.sub) > 1] ## Retain occurring species
+          # Polishing for subsequent runs
+          if (polishing == 'strict') {
+            repeat {
+              IO.x.sub <- x.sub
+              IO.x.sub[IO.x.sub > 0] <- 1
+              initial_rows <- nrow(x.sub)
+              initial_cols <- ncol(x.sub)
+              x.sub <- x.sub[, colSums(IO.x.sub) > 1] # Species with > 1 occurrence
+              x.sub <- x.sub[rowSums(IO.x.sub) > 1, ] # ... and plots with > 1 species
+              x.sub <- x.sub[, apply(x.sub, 2, var) > 0]
+              if (nrow(x.sub) == initial_rows && ncol(x.sub) == initial_cols) {
+                break
+              }
+            }
+            if (is.null(dim(x.sub)) | nrow(x.sub) < 3 | ncol(x.sub) < 2) {
+              output.sub[[j]] <- NA  # Nothing to split
+            } else {                 
+                output.sub[[j]] <- core(data.matrix(x.sub, rownames.force = NA))
+                count.2 <- count.2 + 1
+            }
+          } else if (polishing == 'relaxed') {
+            x.sub <- x.sub[, colSums(x.sub) > 0]
+            x.sub <- x.sub[, apply(x.sub, 2, var) > 0] # + species with variance
+            x.sub <- x.sub[rowSums(x.sub) > 0, ]       # + plots with species
 
-          if (is.null(dim(x.sub))) {
-            output.sub[[j]] <- NA  ## Nothing to split
-          } else {
-            ## Omit species and plots without variance
-            x.sub <- x.sub[,apply(x.sub, 2, var) > 0]
-            x.sub <- x.sub[apply(x.sub, 1, var) > 0,]
-
-            if (nrow(x.sub) > 2) { ## Enough plots left?
-              output.sub[[j]] <- core(data.matrix(x.sub, rownames.force = NA))
-              count.2 <- count.2 + 1
-
+            if (is.null(dim(x.sub)) | nrow(x.sub) < 3 | ncol(x.sub) < 2) {
+              output.sub[[j]] <- NA  # Nothing to split
             } else {
-              output.sub[[j]] <- NA
+                output.sub[[j]] <- core(data.matrix(x.sub, rownames.force = NA))
+                count.2 <- count.2 + 1
             }
           }
         } else {
           output.sub[[j]] <- NA
         }
-
-        ## Report progress
-        message(".", appendLF = FALSE)
       }
-
-      # After the j loop, add a line break
-      message("")
 
       ## Look if some of the partitions should be rejected
       ok.vec <- vector()
@@ -1241,7 +1327,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
             idx <- length(indlist) + 1
             indlist[[idx]] <- output.sub[[m2]]$indnames
           }
-        }    
+        }
         names(indlist) <- colnames(summ)
 
         ## OK, now we have a matrix with cluster affiliations of this level
@@ -1271,13 +1357,13 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
     for (z in 1:length(cnam)) {
       nch <- nchar(cnam[z])
       childs <- c(childs, length(grep(cnam[z], substr(cnam, 1, nch),
-                                         value = TRUE)))
+                                      value = TRUE)))
     }
     summ[1,2:ncol(summ)] <- cnam[childs > 1]
   }
   summ <- as.data.frame(summ)
 
-  ## ------------ Output ---------------------------------------------------- ##
+  ## ------------ Output -------------------------------------------------- ##
 
   if (ncol(ctb) == 1) {
     OUT <- list(
@@ -1293,7 +1379,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
       indicators  = indlist,
       dat         = dat
     )
-  }  
+  }
   else if (ncol(ctb) > 1) {
     OUT <- list(
       call        = sys.call(),
@@ -1325,9 +1411,16 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6, l.max = FALSE,
   }
 
   if (ncol(ctb) == 1) {
-    message("Non-hierarchical partition created")
+    message("\nNon-hierarchical partition created")
   } else {
-    message("Cluster tree with ", ncol(ctb), " levels created")
+    message("\nCluster tree with ", ncol(ctb), " levels created")
+  }
+
+  # Report missing rows
+  unused_sites <- length(setdiff(rownames(dat_orig), rownames(dat)))
+  if (unused_sites > 0) {
+    site_label <- ifelse (unused_sites == 1, "site", "sites")
+    message(paste(unused_sites, "unallocated", site_label))
   }
 
   invisible(OUT)

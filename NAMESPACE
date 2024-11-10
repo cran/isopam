@@ -3,21 +3,22 @@
      export(isotab)
 
 ## Imports
-    importFrom("grDevices", "bmp", "dev.off")
-    importFrom("graphics", "identify")
-    importFrom("stats", "aggregate", "as.dist", "dhyper", "na.omit", "phyper", 
-               "var", "as.dendrogram", "setNames")
-    importFrom("utils", "write.table", "combn")
-    importFrom("cluster", "pam", "daisy")
-    importFrom("vegan", "vegdist", "distconnected", "isomap")
+    importFrom("cluster", "daisy", "pam")
+    importFrom("fastkmedoids", "fastpam")
     importFrom("future", "plan")
     importFrom("future.apply", "future_sapply")
-    importFrom("proxy", "dist", "pr_DB")
+    importFrom("ggplot2", "aes", "coord_cartesian", "element_blank", "element_text", 
+               "expand_limits", "geom_bar", "geom_text", "ggplot", "ggplot_build", 
+               "guides", "labs", "scale_fill_manual", "theme", "theme_minimal")
+    importFrom("grDevices", "bmp", "dev.off")
+    importFrom("graphics", "identify")
     importFrom("methods", "is")
-    importFrom("ggplot2", "ggplot", "aes", "geom_bar", "scale_fill_manual",
-               "labs", "theme_minimal", "theme", "element_text", 
-               "element_blank", "margin", "expand_limits", "coord_cartesian", 
-               "guides", "ggplot_build", "geom_text")
+    importFrom("proxy", "dist", "pr_DB")
+    importFrom("ps", "ps_system_memory")
+    importFrom("stats", "aggregate", "as.dendrogram", "as.dist", "dhyper", 
+               "na.omit", "phyper", "setNames", "var")
+    importFrom("utils", "combn", "object.size", "write.table")
+    importFrom("vegan", "distconnected", "isomap", "vegdist")
 
 ## S3 Methods
     S3method(plot, isopam)

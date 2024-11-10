@@ -109,7 +109,7 @@ plot.isotab <- function(x, labels = FALSE, text.size = 15, title = NULL,
                               ifelse(df4plot$p <= 0.05, "*", "")))
   # ggplot
   gg <- ggplot2::ggplot(df4plot, ggplot2::aes(x = phi, y = factor(nam,
-                    levels = unique(df4plot$nam[order(df4plot$order)])))) +
+                    levels = unique(with(df4plot, nam[order(order)]))))) +
                     ggplot2::geom_bar(ggplot2::aes(fill = factor(grp)),
                     stat = "identity") +
       ggplot2::scale_fill_manual(values = colors) +

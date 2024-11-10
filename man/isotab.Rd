@@ -25,7 +25,7 @@ isotab(x, level = NULL, clusters = NULL, phi.min = "isotab", p.max = .05)
    Object either of class \code{isopam} or a dataframe or matrix with rownames
    (plot names) and column names (species names) that is accompanied by a 
    cluster vector (\code{clusters}) with named elements corresponding to the
-   sites in \code{x}. Tibbles need a column with plot names (<chr>), while the 
+   rows in \code{x}. Tibbles need a column with plot names (<chr>), while the 
    other columns are of class <dbl> or <int>. In method \code{print}, \code{x} 
    is an object of class \code{isotab}.}
   \item{clusters}{Vector with assignments of clusters to plots, only
@@ -96,7 +96,7 @@ isotab(x, level = NULL, clusters = NULL, phi.min = "isotab", p.max = .05)
    data(andechs)
      
    ## call isopam with the standard options
-   ip<-isopam(andechs)
+   ip <-isopam(andechs)
     
    ## build table
    it <- isotab(ip)
