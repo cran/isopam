@@ -1,6 +1,7 @@
 ## Exports
      export(isopam)
      export(isotab)
+     export(clusters)
 
 ## Imports
     importFrom("cluster", "daisy", "pam")
