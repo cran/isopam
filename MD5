@@ -1,4 +1,4 @@
-00d201e4e202f7c6b1ec9fea370e2414 *DESCRIPTION
+cbbfe3c4b16175dad1c815023ff3138c *DESCRIPTION
 a97e22c5867498c3e12aea29610e2d96 *NAMESPACE
 dd2af5c049f5165c516f431d0caf29d8 *R/clusters.R
 6d49828216e8efb5520416f325fa96ca *R/isopam.R
@@ -7,7 +7,7 @@ e8906c1d0abadd728bcc2ad1bbb5e093 *R/plot.isotab.R
 af3ab6f818d4ac988f686979c7f1e7ca *data/andechs.rda
 1282acc8b22d3e502f76de2c2bd27fac *inst/CITATION
 24cb6392e51c57b0fb95b98cf12081fb *man/andechs.Rd
-23324c12e3d81ce4a729c724f2048b69 *man/clusters.Rd
+b256c08d9ff7228a70aa3a9d0de07e4c *man/clusters.Rd
 5ea79f6fd93ba0cde05a88cdb8b4f22b *man/isopam.Rd
 1eed057c59635d4c993c56c2a4023c02 *man/isotab.Rd
 d459aef298f3158a534415285ed8acf8 *man/plot.isotab.Rd

@@ -20,17 +20,7 @@ clusters(x, level = NULL, k = NULL, style = c("flat", "hierarchical"))
   \item{k}{
    An integer scalar or vector with the desired number(s) of groups}  
   \item{style}{
-   Whether the labels of the clusters are consecutive ('flat') or nested ('hierarchical', i.e. 1.1, 1.2 etc. at the second level).}
-}  
-\details{
-   \code{phi.min} is based on the 'equalized \emph{phi}' value according to
-   \enc{Tichý}{Tichy} & \enc{Chitrý}{Chitry} 2006. The threshold proposed if 
-   \code{phi.min} is set to "isotab" should be adjusted to local conditions. 
-   The significance (Fisher's \emph{p}) refers to the probability that the 
-   observed frequency is reached. The test is two-tailed, which means that 
-   exceptionally low frequencies can result as highly significant as well as 
-   exceptionally high frequencies. This allows positive and negative 
-   characterisation of a cluster by species.   
+   Whether the labels of the clusters are consecutive ('flat') or nested ('hierarchical', i.e. 1.1, 1.2 etc.).}
 }
 \value{
    Factor vector or data frame with the cluster assignments.

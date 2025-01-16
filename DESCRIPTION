@@ -1,7 +1,7 @@
 Package: isopam
 Type: Package
 Title: Clustering of Sites with Species Data
-Version: 3.1
+Version: 3.2
 Authors@R: c(person("Sebastian", "Schmidtlein", role = c("aut", "cre"),
                    email = "schmidtlein@kit.edu",
                    comment = c(ORCID = "0000-0003-1888-1865")),
@@ -15,12 +15,12 @@ Description: Clustering algorithm developed for use with plot inventories of spe
 License: GPL (>= 2)
 Encoding: UTF-8
 NeedsCompilation: no
-Packaged: 2025-01-08 10:19:13 UTC; ses
+Packaged: 2025-01-08 10:56:07 UTC; ses
 Author: Sebastian Schmidtlein [aut, cre]
     (<https://orcid.org/0000-0003-1888-1865>),
   Jason Collison [aut],
   Robin Pfannendoerfer [aut],
   Lubomir Tichy [ctb]
 Repository: CRAN
-Date/Publication: 2025-01-08 11:20:08 UTC
+Date/Publication: 2025-01-16 13:00:11 UTC
 Depends: R (>= 3.5.0)
