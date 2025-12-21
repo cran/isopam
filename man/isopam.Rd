@@ -16,10 +16,10 @@
        clusters and cluster numbers for concentration of 
        indicative species in groups. Predefined indicative 
        species and cluster medoids can optionally be added 
-       for a semi-supervised classification.
+       for fully or semi-supervised classification.
      }
      \usage{
-     isopam(dat, c.fix = FALSE, c.max = 6, l.max = FALSE, stopat = c(1,7),
+     isopam(dat, c.fix = NULL, c.max = NULL, l.max = FALSE, stopat = c(1,7),
             sieve = TRUE, Gs = 3.5, ind = NULL, centers = NULL, 
             distance = 'bray', k.max = 100, d.max = 7, juice = FALSE, 
             polishing = c('strict', 'relaxed'), \dots)
@@ -35,12 +35,22 @@
          to a descriptor (typically a species). All variables must
          be numeric. Missing values (NAs) are not allowed. At least
          3 rows (plots) are required.}
-       \item{c.fix}{number of clusters (defaults to \code{FALSE}).
+       \item{c.fix}{number of clusters (defaults to \code{NULL}).
          If a number is given, non-hierarchical partitioning is
          performed, \code{c.max} is ignored and \code{l.max} is 
-         set to one.}
+         set to one. In combination with \code{centers}, if 
+         \code{c.fix} exceeds the number of provided centers,
+         semi-supervised mode is activated: the provided centers
+         remain fixed while additional clusters are formed 
+         to reach the specified total (see Details).}
        \item{c.max}{maximum number of clusters per partition.
-         Applies to all splits.}
+         Applies to all splits. Defaults to 6 unless \code{centers}
+         is provided, in which case it defaults to the number of
+         centers. If explicitly set to a value greater than the 
+         number of provided centers (with \code{c.fix = NULL}),
+         semi-supervised search mode is activated: the algorithm
+         searches for the optimal number of additional clusters
+         (see Details).}
        \item{l.max}{maximum number of hierarchy levels. Defaults
          to \code{FALSE} (no maximum number). Note that divisions
          may stop well before this number is reached (see
@@ -69,8 +79,11 @@
          indicators with \code{sieve = TRUE} (\code{ind} overrules 
          \code{sieve}).}
        \item{centers}{optional vector with indices (numeric) or 
-         names (character) of observations used as cluster cores 
-         (supervised classification).}
+         names (character) of observations used as cluster cores.
+         With \code{centers} alone (fully supervised mode), exactly
+         as many clusters as centers are created. Combine with
+         \code{c.fix} or \code{c.max} for semi-supervised modes
+         (see Details).}
 	     \item{distance}{name of a dissimilarity index for the 
          distance matrix used as a starting point for Isomap.
          Any distance measure implemented in packages \pkg{vegan}
@@ -90,7 +103,7 @@
          functions \code{plot} and \code{identify} (see 
          \link[stats]{dendrogram} and \link[stats]{hclust}).}
        \item{x}{\code{isopam} result object in methods 
-         \code{plot}, \code{print} and \code{identify}.}
+         \code{plot}, \code{print}, and \code{identify}.}
        \item{object}{\code{isopam} result object in method 
          \code{summary}.}
      }
@@ -118,6 +131,8 @@
          descriptors (species).}
        \item{centers_usr}{Cluster centers suggested by user.}
        \item{ind_usr}{Indicators suggested by user.}
+       \item{supervised}{character string describing the type of 
+         supervision used, or \code{NULL} if unsupervised.}
        \item{indicators}{Indicators used.}
        \item{dendro}{an object of class \code{hclust} representing
          the clustering (as used by \code{plot}). Not present
@@ -140,8 +155,29 @@
        underlying Isomap algorithm); the distance measure 
        used for the initial distance matrix can be freely defined.
        
-       In semi-supervised mode, clusters are build around the provided
-       medoids. Pre-defined indicator species are not as constraining,
+       Three supervised modes are available when \code{centers} are
+       provided:
+       \itemize{
+         \item Fully supervised mode (default with \code{centers}): 
+           Only the specified centers are used, creating exactly as many 
+           clusters as centers provided. No optimization of cluster number.
+         \item Semi-supervised mode with fixed number of clusters
+           (\code{centers} + \code{c.fix}): When \code{c.fix} exceeds the 
+           number of centers, additional clusters are formed
+           to reach the total specified by \code{c.fix}. For example, with
+           2 centers and \code{c.fix = 4}, you get 2 fixed + 2 free clusters.
+           The initial medoids for swapping are placed using a greedy 
+           maximin approach.
+         \item Semi-supervised mode with optimization of cluster number
+           (\code{centers} + \code{c.max}): When \code{c.max} is explicitly set
+           greater than the number of centers (and \code{c.fix = NULL}),
+           the algorithm searches for the optimal total number of clusters
+           up to \code{c.max}. The provided centers remain fixed while the number
+           and placement of additional clusters is optimized. If no additional
+           clusters improve the result, only the provided centers are used.
+       }
+       
+       Pre-defined indicator species are not as constraining as centers,
        even if preference is given to cluster solutions in which their
        fidelity is maximized. It depends on the data how much they affect 
        the result.
@@ -197,10 +233,13 @@
        of the default method.
      }
      \author{
-       Sebastian Schmidtlein with contributions from Jason Collison and
-       Lubomir \enc{Tichý}{Tichy}
+       Sebastian Schmidtlein with contributions from Jason Collison,
+       Robin Pfannendoerfer and Lubomir \enc{Tichý}{Tichy}
        }
      \seealso{
+       \code{\link{clusters}} for extracting cluster assignments from
+       the result object.
+       
        \code{\link{isotab}} for a table of descriptor (species)
        frequencies in clusters and fidelity measures. There is a plot 
        method associated to \code{\link{isotab}} objects that visualizes 
@@ -218,14 +257,9 @@
      
      ## examine cluster hierarchy
      plot(ip)
-
-     ## retrieve cluster vectors
-     clusters <- ip$flat
-     clusters
      
-     ## same but hierarchical style (available with cluster trees)
-     hierarchy <- ip$hier 
-     hierarchy
+     ## retrieve cluster vector (second hierarchy level)
+     clusters(ip, 2)
 
      ## frequency table
      it <- isotab(ip)
@@ -234,16 +268,24 @@
      ## plot with species fidelities (equalized phi)
      plot(it)
 
-     ## non-hierarchical partitioning with three clusters
+     ## non-hierarchical partitioning with (forced) three clusters
      ip <- isopam(andechs, c.fix = 3)
      ip
 
      ## limiting the set of species used in cluster search
-     ip <- isopam(andechs, ind = c("Car_pan", "Sch_fer"), c.fix = 2)
+     ip <- isopam(andechs, ind = c("Car_pan", "Sch_fer"))
      ip
 
      ## supervised mode with fixed cluster medoids
-     ip <- isopam(andechs, centers = c("p20", "p22"))
+     ip <- isopam(andechs, centers = c("p3", "p19"))
+     ip
+
+     ## semi-supervised: one fixed medoid + two free clusters
+     ip <- isopam(andechs, centers = "p3", c.fix = 3)
+     ip
+
+     ## semi-supervised search: one fixed medoid and optimized number of additional clusters
+     ip <- isopam(andechs, centers = "p3", c.max = 4)
      ip
 
      }

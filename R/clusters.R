@@ -1,9 +1,16 @@
-clusters <-  function(x, level = NULL, k = NULL, style = c("flat", "hierarchical")) {
+#' @export
+clusters <- function(x, ...) {
+  UseMethod("clusters")
+}
 
-  # Check if isopam object is provided
-  if (!"isopam" %in% class(x)) {
-    stop("x is not an object of class isopam")
-  }
+#' @export
+clusters.default <- function(x, ...) {
+  stop("clusters() requires an object of class 'isopam'")
+}
+
+#' @export
+clusters.isopam <- function(x, level = NULL, k = NULL, 
+                            style = c("flat", "hierarchical"), ...) {
 
   # Handle style
   style <- match.arg(style)

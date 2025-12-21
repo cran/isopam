@@ -22,6 +22,8 @@
     importFrom("vegan", "distconnected", "isomap", "vegdist")
 
 ## S3 Methods
+    S3method(clusters, isopam)
+    S3method(clusters, default)
     S3method(plot, isopam)
     S3method(plot, isotab)
     S3method(identify, isopam)

@@ -2,6 +2,7 @@
 \name{clusters}
 \Rdversion{1.1}
 \alias{clusters}
+\alias{clusters.isopam}
 
 \title{
 Returns clusters of an Isopam clustering
@@ -10,7 +11,10 @@ Returns clusters of an Isopam clustering
 Provides a vector or data frame with cluster affiliations determined using Isopam.  
 }
 \usage{
-clusters(x, level = NULL, k = NULL, style = c("flat", "hierarchical"))
+clusters(x, \dots)
+
+\method{clusters}{isopam}(x, level = NULL, k = NULL, 
+         style = c("flat", "hierarchical"), \dots)
 }
 \arguments{
   \item{x}{
@@ -21,6 +25,8 @@ clusters(x, level = NULL, k = NULL, style = c("flat", "hierarchical"))
    An integer scalar or vector with the desired number(s) of groups}  
   \item{style}{
    Whether the labels of the clusters are consecutive ('flat') or nested ('hierarchical', i.e. 1.1, 1.2 etc.).}
+  \item{\dots}{
+   Additional arguments (currently unused).}
 }
 \value{
    Factor vector or data frame with the cluster assignments.
@@ -42,7 +48,7 @@ clusters(x, level = NULL, k = NULL, style = c("flat", "hierarchical"))
    clusters(ip)
 
    ## clusters of level 2, with labels reflecting the hierarchy
-   clusters(ip, 2, style = "hierarchical")
+   clusters(ip, 2, style = "hier")
 
    ## cluster solution with 3 classes
    clusters(ip, k = 3)

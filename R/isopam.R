@@ -1,4 +1,4 @@
-isopam <-  function(dat, c.fix = FALSE, c.max = 6, 
+isopam <-  function(dat, c.fix = NULL, c.max = NULL, 
                     l.max = FALSE, stopat = c(1, 7), sieve = TRUE, 
                     Gs = 3.5, ind = NULL, centers = NULL, 
                     distance = "bray", k.max = 100, d.max = 7, 
@@ -112,43 +112,100 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
     }
   }
 
-  ## In case of predefined centers check their validity,
+  ## In case of predefined centers check their validity
+  semi_supervised <- FALSE
+  semi_supervised_search <- FALSE
+  n_fixed_centers <- 0
+  
+  ## Store whether c.fix/c.max were explicitly provided by user
+  c.fix_user <- !is.null(c.fix)
+  c.max_user <- !is.null(c.max)
+
   if (!is.null(centers)) {
 
     if (is.character(centers)) {
       if (!all(centers %in% rownames(dat))) {
         stop("Centers not valid")
       } else {
-        # Transform into indices
-        centers <- which(rownames(dat) %in% centers)
+        # Transform into indices (preserving order)
+        centers <- match(centers, rownames(dat))
       }
     }
     if (is.numeric(centers) && max(centers) > nrow(dat)) {
       stop("Centers not in range")
     }
 
-    c.fix <- length(centers)
+    n_fixed_centers <- length(centers)
+    
+    # Validate: need at least 2 centers for clustering
+    if (n_fixed_centers < 2 && !c.fix_user && !c.max_user) {
+      stop("At least 2 centers required for supervised mode")
+    }
+  }
+
+  ## ----------- Mode detection and validation ----------- ##
+  
+  ## Case 1: centers NULL, c.fix set - standard partitioning
+  if (is.null(centers) && c.fix_user) {
+    if (c.fix < 2) stop("c.fix must be >= 2")
+    if (c.fix > nrow(dat) - 1) c.fix <- nrow(dat) - 1
+    l.max <- 1
+    c.min <- c.fix
+    c.max <- c.fix
+  
+  ## Case 2: centers set, c.fix FALSE, c.max NULL - fully supervised
+  } else if (!is.null(centers) && !c.fix_user && !c.max_user) {
+    if (n_fixed_centers < 2) stop("At least 2 centers required")
+    l.max <- 1
+    c.min <- n_fixed_centers
+    c.max <- n_fixed_centers
+  
+  ## Case 3: centers set, c.fix set - semi-supervised fixed (c.max ignored)
+  } else if (!is.null(centers) && c.fix_user) {
+    if (c.max_user) warning("Both c.fix and c.max provided; c.max ignored")
+    if (c.fix < n_fixed_centers) stop("c.fix must be >= number of centers")
+    if (c.fix < 2) stop("c.fix must be >= 2")
+    if (c.fix > nrow(dat) - 1) c.fix <- nrow(dat) - 1
+    l.max <- 1
+    c.min <- c.fix
+    c.max <- c.fix
+    if (c.fix > n_fixed_centers) {
+      semi_supervised <- TRUE
+      message("Semi-supervised mode: ", c.fix - n_fixed_centers,
+              " additional cluster(s)")
+    }
+  
+  ## Case 4: centers set, c.max set - semi-supervised search
+  } else if (!is.null(centers) && c.max_user) {
+    if (c.max < n_fixed_centers) stop("c.max must be >= number of centers")
+    if (c.max < 2) stop("c.max must be >= 2")
+    if (c.max > nrow(dat) - 1) c.max <- nrow(dat) - 1
+    l.max <- 1
+    c.min <- max(2, n_fixed_centers)  # At least 2 clusters
+    if (c.max > n_fixed_centers) {
+      semi_supervised <- TRUE
+      semi_supervised_search <- TRUE
+      message("Semi-supervised search mode: up to ", c.max - n_fixed_centers,
+              " additional cluster(s)")
+    }
+  
+  ## Default case: no centers, no c.fix - hierarchical or default partitioning
+  } else {
+    c.min <- 2
+    if (!c.max_user) c.max <- 6
   }
 
   ## Initiate count
   count <- 1
 
-  ## Default minimum cluster number
-  c.min <- 2
+  ## Initialize parallel workers once (outside core to avoid repeated startup)
+  parallel_initialized <- FALSE
 
-  if (is.numeric(c.fix)) {
-    l.max <- 1
-    if (c.fix < 2) stop("c.fix < 2")
-    if (c.fix > nrow(dat) - 1) c.fix <- nrow(dat) - 1
-    c.min <- c.fix
-    c.max <- c.fix
-  }
-
-  ## ----------- core function ---------------------------------------------- ##
-
+  ## ----------- core function ---------------------------------------------- ##  
+  
   core <- function(xdat) {
 
-    IO.xdat <- ifelse(xdat > 0, TRUE, FALSE)
+    IO.xdat <- ifelse(xdat > 0, 1L, 0L)
 
     ## Some useful descriptors
     N.xdat <- nrow(xdat)                         ## Total number of plots
@@ -218,29 +275,6 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
     if (c.max > N.xdat - 1) c.max <- N.xdat - 1
     if (c.max < 2) stop("c.max < 2")
 
-    slowmode <- FALSE # Stays FALSE if fast loops are possible
-
-    ## -------------- Dealing with memory limitations ------------------ ##
-
-    # Available RAM
-    sys_info <- ps::ps_system_memory()
-    available_mem <- sys_info$avail
-
-    ## Try to prepare output array
-    ## Need a place to store the calculations done in the g2 loop
-    ## so they may be reused rather than recalculated.
-    ## The +1 is due to zeros needing to be indexed as well.
-
-    object_size <- 0
-    slowmode <- tryCatch({
-      DDD_lookup_table <- array(NA_real_, c(N.xdat, N.xdat + 1,
-                                N.xdat + 1))
-      object_size <- object.size(DDD_lookup_table)
-      FALSE
-    }, error = function(e) {
-      TRUE
-    })
-
     # Criteria for parallel processing (subject to further experiments)
     fut <- TRUE # Stays TRUE if parallel processing seems to be possible
     rg.k <- k.max - k.min
@@ -256,43 +290,8 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
       fut <- FALSE
     }
 
-    # Condition: In case of fastmode (with lookup array):
-    # lookup fits in mem limit
-    if (!slowmode & object_size > future_memlim) {
-      fut <- FALSE
-    }
-
     # Reporting
     if (!already_shown) {
-      # Slowdown alert not only in slowmode but also if
-      # lookup exceeds memory (causing memory swapping)
-      if (slowmode | object_size > available_mem) {
-        message("Hitting memory limit: Expect substantial slowdown")
-      }
-      # Conditional suggestion to increase future mem limit
-      if (!slowmode & object_size > future_memlim & 
-          object_size <= available_mem) {
-        if (object_size >= 10 ^ 9) {
-          obj_siz_unit <- "GB"
-          obj_siz <- round(object_size / 2 ^ 30, 1)
-        } else {
-          obj_siz_unit <- "MB"
-          obj_siz <- round(object_size / 2 ^ 20, 1)
-        }
-        if (available_mem >= 10 ^ 9) {
-          mem_siz_unit <- "GB"
-          mem_siz <- round(available_mem / 2 ^ 30, 1)
-        } else {
-          mem_siz_unit <- "MB"
-          mem_siz <- round(available_mem / 2 ^ 20, 1)
-        }
-        message("At least ", object_size, " bytes (",
-        obj_siz, " ", obj_siz_unit, ") required for the use of a",
-        "  lookup array in parallel operation.")
-        message("Consider increasing 'future.globals.maxSize' if RAM allows.")
-        message("Available memory: ", available_mem, " bytes (", mem_siz,
-                " ", mem_siz_unit, ")")
-      }
       already_shown <<- TRUE
     }
 
@@ -309,191 +308,102 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
 
     if (fut) {
 
-      future::plan(future::multisession)
+      ## Initialize workers only once (reuse across core() calls)
+      if (!parallel_initialized) {
+        future::plan(future::multisession)
+        parallel_initialized <<- TRUE
+      }
 
       ## b-loop: Isomap k
-      out.array <- array(future.apply::future_sapply(k.min:k.max, 
-                         future.seed = TRUE, function(b) {
+      ## Wrap entire future_sapply to suppress package loading warnings in workers
+      ## Use future.packages to explicitly load dependencies in workers
+      out.array <- suppressWarnings(array(future.apply::future_sapply(k.min:k.max, 
+                         future.seed = TRUE, 
+                         future.packages = c("vegan", "cluster", "fastkmedoids"),
+                         function(b) {
 
-        ## Isomap
-        suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
+          ## Isomap
+          suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
 
-        ## Fixing the maximum of dimensions considered when calculating
-        ## the distance matrix for the isomap space
-        d.max.new <- min(sum(isom$eig > 0), ncol(isom$points), d.max, na.rm = T)
-        out.mat <- matrix(NA, nrow = d.max - 1, ncol = c.max - c.min + 1 )
+          ## Fixing the maximum of dimensions considered when calculating
+          ## the distance matrix for the isomap space
+          d.max.new <- min(sum(isom$eig > 0), ncol(isom$points), d.max, na.rm = T)
+          out.mat <- matrix(NA, nrow = d.max - 1, ncol = c.max - c.min + 1 )
 
-        ## d-Loops
-        if (d.max.new > 1) {
-          for (d in 2:d.max.new) {
+          ## d-Loops
+          if (d.max.new > 1) {
+            
+            # Optimization: Pre-standardize points to avoid repeated work in daisy
+            # daisy(stand=TRUE) uses Mean Absolute Deviation (MAD)
+            points_std <- apply(isom$points[, 1:d.max.new, drop = FALSE], 2, function(x) {
+              mad_val <- mean(abs(x - mean(x)))
+              if (mad_val < 1e-12) return(rep(0, length(x)))
+              (x - mean(x)) / mad_val
+            })
+            
+            # Initialize squared distance matrix with 1st dimension
+            dist_sq <- outer(points_std[, 1], points_std[, 1], "-")^2
 
-            isodiss <- suppressWarnings(daisy(isom$points[, 1:d], metric =
-                                              "euclidean", stand = TRUE))
-            # For fastpam
-            isodiss_vector <- as.vector(isodiss)
+            for (d in 2:d.max.new) {
 
-            for (e in c.min:c.max) { ## e-loop: Cluster no.
+              # Incrementally add squared differences of the new dimension
+              dist_sq <- dist_sq + outer(points_std[, d], points_std[, d], "-")^2
+              isodiss <- as.dist(sqrt(dist_sq))
 
-              ## --------- Partitioning (PAM) ------------------------------- #
+              # For fastpam
+              isodiss_vector <- as.vector(isodiss)
+              # For semi-supervised mode (computed once per d-level)
+              dmat_iso <- if (semi_supervised) as.matrix(isodiss) else NULL
+              # Cache for incremental medoid selection across e values
+              prev_optimized_medoids <- NULL
 
-              if (!is.null(centers)) {
-                cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
-                              diss = TRUE, do.swap = FALSE)
-                cl <- cl.iso$clustering                     ## Group affiliation
-                ci <- cl.iso$clusinfo[, 1]                  ## Cluster size
-              } else {
-                cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
-                cl <- cl.iso@assignment
-                ci <- as.numeric(table(cl))
-              }
+              for (e in c.min:c.max) { ## e-loop: Cluster no.
 
-              ## ----------- Start parallel fast mode --------------- ##
+                ## --------- Partitioning (PAM) ------------------------------- #
 
-              if (!slowmode) {
-                
-                ## Catching a situation where memory limit is hit in fast mode
-                tryCatch({
-                  ## For Williams` correction
-                  w1 <- N.xdat * sum(1 / ci) - 1
-                  w2 <- 6 * N.xdat * (e - 1)
-
-                  ## Compute G-values for species(code adapted from Lubomir Tichy)
-
-                  gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                  for (g1 in 1:SP.xdat) {        ## g1-loop through species
-
-                    DDD <- 0
-                    spec_frq <- frq.xdat[g1]
-
-                    ## Precompute bom and bim for the current species
-                    bom <- spec_frq / N.xdat
-                    bim <- 1 - bom
-                    
-                    ## For Williams` correction
-                    willi <- 1 + ((w1 * w3[g1]) / w2)
-
-                    ## Mask out entries in cl using appropriate col in IO.xdat
-                    groupids <- cl[IO.xdat[, g1]]
-
-                    for (g.fast in 1:e) {      ## g.fast-loop through clusters
-
-                      fra1 <- sum(groupids == g.fast)   ## Species occ. in cluster
-                      Nj <- ci[g.fast]                  ## Cluster size
-
-                      ## Have we calculated this before?
-                      DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
-
-                      if (!is.na(DDDadd)) {
-                        ## Already existed in the lookup table; use it.
-                        DDD <- DDD + DDDadd
-                      } else {
-                        ## so need to calculate it ...
-                        fra0 <- Nj - fra1
-                        bum <- fra1 / (Nj * bom)
-                        bam <- fra0 / (Nj * bim)
-                        DDDadd <- 0
-                        if (!is.na(bum) && bum > 0) {
-                          DDDadd <- DDDadd + (fra1 * log(bum))
-                        }
-                        if (!is.na(bam) && bam > 0) {
-                          DDDadd <- DDDadd + (fra0 * log(bam))
-                        }
-                        DDD <- DDD + DDDadd
-                        ## ... and store for next time
-                        DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
-                      }
-                    }
-                    DDD <- DDD * 2
-                    gt[g1, ] <- DDD / willi ## Williams` correction
-                  }
-
-                  ## Standardization(Botta-Dukat et al. 2005)
-                  gt.ex <- e - 1                 ## Expected G
-                  gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
-                  G <- (gt - gt.ex) / gt.sd
-
-                  ## Using predefined indicators
-                  if (usr_ind) {
-                    glgth <- length(G[xind])
-                    if (glgth == 0) {
-                      out.mat[d - 1, e + 1 - c.min] <- NA
+                if (!is.null(centers)) {
+                  if (semi_supervised && e > n_fixed_centers) {
+                    # Semi-supervised: fixed centers + additional free medoids
+                    n_additional <- e - n_fixed_centers
+                    if (is.null(prev_optimized_medoids)) {
+                      # First semi-supervised iteration: full initialization
+                      additional_medoids <- select_additional_medoids(dmat_iso, 
+                                              centers, n_additional)
+                      initial_medoids <- c(centers, additional_medoids)
                     } else {
-                      out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
+                      # Incremental: add one more medoid to previous result
+                      new_medoid <- select_additional_medoids(dmat_iso, 
+                                      prev_optimized_medoids, 1L)
+                      initial_medoids <- c(prev_optimized_medoids, new_medoid)
                     }
+                    # Apply restricted swap (only free medoids can move)
+                    optimized_medoids <- restricted_pam_swap(dmat_iso, 
+                                          initial_medoids, n_fixed_centers)
+                    prev_optimized_medoids <- optimized_medoids
+                    # Fast assignment without full PAM call
+                    cl <- assign_to_medoids(dmat_iso, optimized_medoids)
+                    ci <- tabulate(cl, nbins = e)
+                  } else {
+                    # Standard supervised: only fixed centers
+                    cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
+                                  diss = TRUE, do.swap = FALSE)
+                    cl <- cl.iso$clustering
+                    ci <- cl.iso$clusinfo[, 1]
                   }
-
-                  if (!sieve && !usr_ind) {
-                    out.mat[d - 1, e + 1 - c.min] <- mean(G)
-                  }
-
-                  ## Standard: Filtering and averaging
-                  if (sieve && !usr_ind) {
-                    ## Filtering by G
-                    glgth <- length(G[G >= Gs])
-                    if (glgth == 0) {
-                      out.mat[d - 1, e + 1 - c.min] <- NA
-                    } else {
-                      ## Averaging
-                      out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
-                    }
-                  }
-                }, error = function(e) {
-                  slowmode <- TRUE
-                })
-              }
-
-              ## ----------- Start parallel slow mode -------------- ##
-
-              if (slowmode) {
-
-                ## For Williams` correction
-                w1 <- N.xdat * sum(1 / ci) - 1
-                w2 <- 6 * N.xdat * (e - 1)
-
-                ## Compute G-values for species
-                ## (code adapted from Lubomir Tichy)
-
-                gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                for (g1 in 1:SP.xdat) {         ## g1-loop through species
-
-                  DDD <- 0
-                  spec_frq <- frq.xdat[g1]
-
-                  ## Precompute bom and bim for the current species
-                  bom <- spec_frq / N.xdat
-                  bim <- 1 - bom
-
-                  ## For Williams` correction
-                  willi <- 1 + ((w1 * w3[g1]) / w2)
-
-                  ## Mask out entries in cl using appropriate col in IO.xdat
-                  groupids <- cl[IO.xdat[, g1]]
-
-                  for (g.slow in 1:e) {   ## g.slow-loop through clusters
-
-                    fra1 <- sum(groupids == g.slow)   ## Species in cluster
-                    Nj <- ci[g.slow]                  ## Cluster size
-                    fra0 <- Nj - fra1
-                    bum <- fra1 / (Nj * bom)
-                    bam <- fra0 / (Nj * bim)
-                    DDDadd <- 0
-                    if (!is.na(bum) && bum > 0) {
-                      DDDadd <- DDDadd + (fra1 * log(bum))
-                    }
-                    if (!is.na(bam) && bam > 0) {
-                      DDDadd <- DDDadd + (fra0 * log(bam))
-                    }
-                    DDD <- DDD + DDDadd
-                  }
-                  DDD <- DDD * 2
-                  gt[g1,] <- DDD / willi ## Williams` correction
+                } else {
+                  cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
+                  cl <- cl.iso@assignment
+                  ci <- tabulate(cl, nbins = e)
                 }
 
-                ## Standardization(Botta-Dukat et al. 2005)
+                ## ----------- Start vectorized calculation --------------- ##
+
+                # Calculate G-values using the helper function
+                gt <- calc_G_vectorized(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e)
+
+                ## Standardization (Botta-Dukat et al. 2005)
                 gt.ex <- e - 1                 ## Expected G
-                gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
+                gt.sd <- sqrt(2 * gt.ex)       ## Expected sd
                 G <- (gt - gt.ex) / gt.sd
 
                 ## Using predefined indicators
@@ -510,9 +420,8 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
                   out.mat[d - 1, e + 1 - c.min] <- mean(G)
                 }
 
-                ## Standard: Filtering and aver aging
+                ## Standard: Filtering and averaging
                 if (sieve && !usr_ind) {
-
                   ## Filtering by G
                   glgth <- length(G[G >= Gs])
                   if (glgth == 0) {
@@ -522,17 +431,16 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
                     out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
                   }
                 }
+                
+                ## ----------- End vectorized calculation --------------- ##
+
               }
-
-            ## ----------- End parallel slow mode --------------- ##
-
             }
           }
-        }
 
         return(out.mat)
 
-      }), dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))
+      }), dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))) # End suppressWarnings
 
     ## ----------- End parallel mode --------------------- ##
 
@@ -540,190 +448,92 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
 
     ## ----------- Non-parallel processing --------------- ##
 
-      # this line is used to reset to default state
-      future::plan(future::sequential)
-
       ## b-loop: Isomap k
-      out.array <- array(sapply(k.min:k.max, function(b) {
+      ## Wrap entire sapply to suppress package loading warnings
+      out.array <- suppressWarnings(array(sapply(k.min:k.max, function(b) {
 
-        ## Isomap
-        suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
+          ## Isomap
+          suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
 
-        ## Fixing the maximum of dimensions considered when calculating
-        ## the distance matrix for the isomap space
-        d.max.new <- min(sum(isom$eig > 0), ncol(isom$points), d.max, na.rm = T)
-        out.mat <- matrix(NA, nrow = d.max - 1, ncol = c.max - c.min + 1)
+          ## Fixing the maximum of dimensions considered when calculating
+          ## the distance matrix for the isomap space
+          d.max.new <- min(sum(isom$eig > 0), ncol(isom$points), d.max, na.rm = T)
+          out.mat <- matrix(NA, nrow = d.max - 1, ncol = c.max - c.min + 1)
 
-        if (d.max.new > 1) {
-          for (d in 2:d.max.new) {
+          ## d-Loops
+          if (d.max.new > 1) {
+            
+            # Optimization: Pre-standardize points to avoid repeated work in daisy
+            # daisy(stand=TRUE) uses Mean Absolute Deviation (MAD)
+            points_std <- apply(isom$points[, 1:d.max.new, drop = FALSE], 2, function(x) {
+              mad_val <- mean(abs(x - mean(x)))
+              if (mad_val < 1e-12) return(rep(0, length(x)))
+              (x - mean(x)) / mad_val
+            })
+            
+            # Initialize squared distance matrix with 1st dimension
+            dist_sq <- outer(points_std[, 1], points_std[, 1], "-")^2
 
-            isodiss <- suppressWarnings(daisy(isom$points[, 1:d], metric =
-                                        "euclidean", stand = TRUE))
-            # For fastpam
-            isodiss_vector <- as.vector(isodiss)
+            for (d in 2:d.max.new) {
 
-            for (e in c.min:c.max) { ## e-loop: Cluster no.
+              # Incrementally add squared differences of the new dimension
+              dist_sq <- dist_sq + outer(points_std[, d], points_std[, d], "-")^2
+              isodiss <- as.dist(sqrt(dist_sq))
 
-              ## --------- Partitioning(PAM) ------------------------------ #
+              # For fastpam
+              isodiss_vector <- as.vector(isodiss)
+              # For semi-supervised mode (computed once per d-level)
+              dmat_iso <- if (semi_supervised) as.matrix(isodiss) else NULL
+              # Cache for incremental medoid selection across e values
+              prev_optimized_medoids <- NULL
 
-              if (!is.null(centers)) {
-                cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
-                              diss = TRUE, do.swap = FALSE)
-                cl <- cl.iso$clustering                     ## Group affiliation
-                ci <- cl.iso$clusinfo[, 1]                  ## Cluster size
-              } else {
-                cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
-                cl <- cl.iso@assignment
-                ci <- as.numeric(table(cl))
-              }
-              
-              ## ----------- Start non-parallel fastmode --------------- ##
+              for (e in c.min:c.max) { ## e-loop: Cluster no.
 
-              if (!slowmode) {
+                ## --------- Partitioning(PAM) ------------------------------ #
 
-                ## Catching a situation where memory limit is hit in fast mode
-                tryCatch({
-                  ## For Williams` correction
-                  w1 <- N.xdat * sum(1 / ci) - 1
-                  w2 <- 6 * N.xdat * (e - 1)
-
-                  ## Compute G-values for species(code adapted from Lubomir Tichy)
-
-                  gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                  for (g1 in 1:SP.xdat) {      ## g1-loop through species
-
-                    DDD <- 0
-                    spec_frq <- frq.xdat[g1]
-
-                    ## Precompute bom and bim for the current species
-                    bom <- spec_frq / N.xdat
-                    bim <- 1 - bom
-
-                    ## For Williams` correction
-                    willi <- 1 + ((w1 * w3[g1]) / w2)
-
-                    ## Mask out entries in cl using appropriate col in IO.xdat
-                    groupids <- cl[IO.xdat[, g1]]
-
-                    for (g.fast in 1:e) {   ## g.fast-loop through clusters
-
-                      fra1 <- sum(groupids == g.fast)   ## Species in cluster
-                      Nj <- ci[g.fast]                  ## Cluster size
-
-                      ## Have we calculated this before?
-                      DDDadd <- DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1]
-
-                      if (!is.na(DDDadd)) {
-                        ## Already existed in the lookup table; use it.
-                        DDD <- DDD + DDDadd
-
-                      } else {
-                        ## so need to calculate it ...
-                        fra0 <- Nj - fra1
-                        bum <- fra1 /(Nj * bom)
-                        bam <- fra0 /(Nj * bim)
-                        DDDadd <- 0
-                        if (!is.na(bum) && bum > 0) {
-                          DDDadd <- DDDadd + (fra1 * log(bum))
-                        }
-                        if (!is.na(bam) && bam > 0) {
-                          DDDadd <- DDDadd + (fra0 * log(bam))
-                        }
-                        DDD <- DDD + DDDadd
-
-                        ## ... and store for next time
-                        ## This is the memory bottleneck
-                        DDD_lookup_table[spec_frq, Nj + 1, fra1 + 1] <- DDDadd
-                      }
-                    }
-
-                    DDD <- DDD * 2
-                    gt[g1,] <- DDD / willi ## Williams" correction
-                  }
-
-                  ## Standardization(Botta-Dukat et al. 2005)
-                  gt.ex <- e - 1                 ## Expected G
-                  gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
-                  G <- (gt - gt.ex) / gt.sd
-
-                  ## Using predefined indicators
-                  if (usr_ind) {
-                    glgth <- length(G[xind])
-                    if (glgth == 0) out.mat[d - 1, e + 1 - c.min] <- NA
-                    else out.mat[d - 1, e + 1 - c.min] <- mean(G[xind])
-                  }
-
-                  if (!sieve && !usr_ind) {
-                    out.mat[d - 1, e + 1 - c.min] <- mean(G)
-                  }  
-
-                  ## Standard: Filtering and averaging
-                  if (sieve && !usr_ind) {
-                    ## Filtering by G
-                    glgth <- length(G[G >= Gs])
-                    if (glgth == 0) {
-                      out.mat[d - 1, e + 1 - c.min] <- NA
+                if (!is.null(centers)) {
+                  if (semi_supervised && e > n_fixed_centers) {
+                    # Semi-supervised: fixed centers + additional free medoids
+                    n_additional <- e - n_fixed_centers
+                    if (is.null(prev_optimized_medoids)) {
+                      # First semi-supervised iteration: full initialization
+                      additional_medoids <- select_additional_medoids(dmat_iso, 
+                                              centers, n_additional)
+                      initial_medoids <- c(centers, additional_medoids)
                     } else {
-                      ## Averaging
-                      out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
+                      # Incremental: add one more medoid to previous result
+                      new_medoid <- select_additional_medoids(dmat_iso, 
+                                      prev_optimized_medoids, 1L)
+                      initial_medoids <- c(prev_optimized_medoids, new_medoid)
                     }
+                    # Apply restricted swap (only free medoids can move)
+                    optimized_medoids <- restricted_pam_swap(dmat_iso, 
+                                          initial_medoids, n_fixed_centers)
+                    prev_optimized_medoids <- optimized_medoids
+                    # Fast assignment without full PAM call
+                    cl <- assign_to_medoids(dmat_iso, optimized_medoids)
+                    ci <- tabulate(cl, nbins = e)
+                  } else {
+                    # Standard supervised: only fixed centers
+                    cl.iso <- cluster::pam(isodiss, k = e, medoids = centers,
+                                  diss = TRUE, do.swap = FALSE)
+                    cl <- cl.iso$clustering
+                    ci <- cl.iso$clusinfo[, 1]
                   }
-                }, error = function(e) {
-                  slowmode <- TRUE
-                })
-              }
-
-              ## ----------- Start non-parallel slowmode --------------- ##
-
-              if (slowmode) {
-
-                ## For Williams` correction
-                w1 <- N.xdat * sum(1 / ci) - 1
-                w2 <- 6 * N.xdat * (e - 1)
-
-                ## Compute G-values for species(code adapted from Lubomir Tichy)
-
-                gt <- matrix(NA, SP.xdat, 1) ## Matrix for G-test results
-
-                for (g1 in 1:SP.xdat) {       ## g1-loop through species
-
-                  DDD <- 0
-                  spec_frq <- frq.xdat[g1]
-
-                  ## Precompute bom and bim for the current species
-                  bom <- spec_frq / N.xdat
-                  bim <- 1 - bom
-
-                  ## For Williams` correction
-                  willi <- 1 + ((w1 * w3[g1]) / w2)
-
-                  ## Mask out entries in cl using appropriate col in IO.xdat
-                  groupids <- cl[IO.xdat[, g1]]
-
-                  for (g.slow in 1:e) {    ## g.slow-loop through clusters
-
-                    fra1 <- sum(groupids == g.slow)   ## Species in cluster
-                    Nj <- ci[g.slow]                  ## Cluster size
-                    fra0 <- Nj - fra1
-                    bum <- fra1 / (Nj * bom)
-                    bam <- fra0 / (Nj * bim)
-                    DDDadd <- 0
-                    if (!is.na(bum) && bum > 0) {
-                      DDDadd <- DDDadd + (fra1 * log(bum))
-                    }
-                    if (!is.na(bam) && bam > 0) {
-                      DDDadd <- DDDadd + (fra0 * log(bam))
-                    }
-                    DDD <- DDD + DDDadd
-                  }
-                  DDD <- DDD * 2
-                  gt[g1,] <- DDD / willi ## Williams" correction
+                } else {
+                  cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
+                  cl <- cl.iso@assignment
+                  ci <- tabulate(cl, nbins = e)
                 }
+                
+                ## ----------- Start vectorized calculation --------------- ##
 
-                ## Standardization(Botta-Dukat et al. 2005)
+                # Calculate G-values using the helper function
+                gt <- calc_G_vectorized(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e)
+
+                ## Standardization (Botta-Dukat et al. 2005)
                 gt.ex <- e - 1                 ## Expected G
-                gt.sd <- sqrt(2 * gt.ex)      ## Expected sd
+                gt.sd <- sqrt(2 * gt.ex)       ## Expected sd
                 G <- (gt - gt.ex) / gt.sd
 
                 ## Using predefined indicators
@@ -736,14 +546,12 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
                   }
                 }
 
-                ## Averaging
                 if (!sieve && !usr_ind) {
                   out.mat[d - 1, e + 1 - c.min] <- mean(G)
                 }
 
                 ## Standard: Filtering and averaging
                 if (sieve && !usr_ind) {
-
                   ## Filtering by G
                   glgth <- length(G[G >= Gs])
                   if (glgth == 0) {
@@ -753,16 +561,15 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
                     out.mat[d - 1, e + 1 - c.min] <- mean(G[G >= Gs]) * glgth
                   }
                 }
+                
+                ## ----------- End vectorized calculation --------------- ##
+
               }
-
-              ## ----------- End non-parallel slowmode --------------- ##
-
             }
           }
-        }
 
         return(out.mat)
-      }),dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))
+      }),dim = c(d.max - 1, c.max - c.min + 1, k.max - k.min + 1))) # End suppressWarnings
 
     ## ----------- End non-parallel mode --------------- ##
     }
@@ -820,58 +627,40 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
       d.iso <- daisy(isom$points[, 1:md], metric = "euclidean", stand = TRUE)
 
       if (!is.null(centers)) {
-        cl.iso <- cluster::pam(d.iso, k = mc, medoids = centers,
-                      diss = TRUE, do.swap = FALSE)
+        if (semi_supervised && mc > n_fixed_centers) {
+          # Semi-supervised: fixed centers + additional free medoids
+          dmat_final <- as.matrix(d.iso)
+          n_additional <- mc - n_fixed_centers
+          additional_medoids <- select_additional_medoids(dmat_final, 
+                                  centers, n_additional)
+          initial_medoids <- c(centers, additional_medoids)
+          # Apply restricted swap (only free medoids can move)
+          optimized_medoids <- restricted_pam_swap(dmat_final, 
+                                initial_medoids, n_fixed_centers)
+          # Final assignment
+          CLS <- assign_to_medoids(dmat_final, optimized_medoids)
+          MDS <- optimized_medoids
+          CLI <- tabulate(CLS, nbins = mc)
+        } else {
+          # Standard supervised: only fixed centers
+          cl.iso <- cluster::pam(d.iso, k = mc, medoids = centers,
+                        diss = TRUE, do.swap = FALSE)
+          CLS <- cl.iso$clustering
+          MDS <- cl.iso$medoids
+          CLI <- t(cl.iso$clusinfo[, 1])
+        }
       } else {
         cl.iso <- cluster::pam(d.iso, k = mc, diss = TRUE)
+        CLS <- cl.iso$clustering
+        MDS <- cl.iso$medoids
+        CLI <- t(cl.iso$clusinfo[, 1])
       }
-
-      CLS <- cl.iso$clustering                 ## Group affiliation
-      MDS <- cl.iso$medoids                    ## Medoids
-      CLI <- t(cl.iso$clusinfo[, 1])           ## Cluster size
 
       ## ------------ method == G ------------------------ #
 
-      ## Contingency table
-      tab <- t(aggregate(IO.xdat, by = list(CLS), FUN = sum)[, -1])
-      ## Frequency table
-      #inf <- matrix(rep(CLI, SP.xdat), nrow = SP.xdat, byrow = TRUE)
-      #FRQ <- tab / inf
-
-      ## Prepare Williams` correction
-      w1 <- N.xdat * sum(1 / CLI) - 1
-      w2 <- 6 * N.xdat * (mc - 1)
-
-      ## Matrix for results
-      g.1 <- matrix(NA, SP.xdat, 1)
-
-      for (g3 in 1:SP.xdat) {
-
-        willi <- 1 + ((w1 * w3[g3]) / w2)
-        DDD <- 0
-        bom <- frq.xdat[g3] / N.xdat
-        bim <- 1 - bom
-        rip <- tab[g3, ]
-
-        for (g4 in 1:mc) {
-
-          fra1 <- rip[g4]
-          Nj <- CLI[g4]
-          fra0 <- Nj - fra1
-          bum <- fra1 / (Nj * bom)
-          bam <- fra0 / (Nj * bim)
-
-          ## adding up values
-          if (!is.na(bum) && bum > 0) {
-            DDD <- DDD + (fra1 * log(bum))
-          }
-          if (!is.na(bam) && bam > 0) {
-            DDD <- DDD + (fra0 * log(bam))
-          }  
-        }
-        DDD <- DDD * 2
-        g.1[g3, ] <- DDD / willi
-      }
+      # Calculate G-values using the vectorized helper function
+      # CLS = cluster assignments, CLI = cluster sizes, mc = number of clusters
+      g.1 <- calc_G_vectorized(IO.xdat, CLS, CLI, frq.xdat, N.xdat, w3, mc)
 
       ## Standardization (Botta-Dukat et al. 2005)
       gt.ex <- mc - 1                       ## Expected G
@@ -1100,7 +889,188 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
 
     return(dendro)
   }
+  
   ## ------------ End dendro function -------------------------------------- ##
+  ##------------------ Helpers --------------------------------------------- ##
+
+  ## Helper function to select additional medoids (deterministic, distance-based)
+  select_additional_medoids <- function(dmat, fixed_centers, n_additional) {
+    if (n_additional <= 0) return(integer(0))
+    n_samples <- nrow(dmat)
+    available <- setdiff(1:n_samples, fixed_centers)
+    if (length(available) <= n_additional) return(available)
+    
+    # Select medoids that are far from fixed centers (greedy maximin)
+    selected <- integer(n_additional)
+    all_selected <- fixed_centers
+    
+    for (i in 1:n_additional) {
+      # For each available point, find min distance to already selected
+      min_dists <- rowMins(dmat[available, all_selected, drop = FALSE])
+      # Select the one with maximum min-distance
+      best_idx <- which.max(min_dists)
+      new_medoid <- available[best_idx]
+      selected[i] <- new_medoid
+      all_selected <- c(all_selected, new_medoid)
+      available <- available[-best_idx]
+    }
+    return(selected)
+  }
+
+  ## Fast row-wise minimum (avoid apply overhead)
+  rowMins <- function(m) {
+    if (ncol(m) == 1L) return(m[, 1L])
+    result <- m[, 1L]
+    for (j in 2:ncol(m)) result <- pmin(result, m[, j])
+    result
+  }
+
+  ## Restricted swap for semi-supervised mode - optimized version
+  ## Only swaps free medoids while keeping fixed centers locked
+  restricted_pam_swap <- function(dmat, initial_medoids, n_fixed, max_iter = 100) {
+    n <- nrow(dmat)
+    k <- length(initial_medoids)
+    n_free <- k - n_fixed
+    
+    if (n_free == 0L) return(initial_medoids)
+    
+    current_medoids <- initial_medoids
+    non_medoid_set <- setdiff(1:n, current_medoids)
+    
+    # Pre-compute distances from all points to current medoids
+    D <- dmat[, current_medoids, drop = FALSE]
+    
+    # For each point: index of closest medoid and the distance
+    closest_idx <- max.col(-D, ties.method = "first")
+    closest_dist <- D[cbind(1:n, closest_idx)]
+    current_cost <- sum(closest_dist)
+    
+    for (iter in 1:max_iter) {
+      improved <- FALSE
+      
+      # Try swapping each free medoid
+      for (fi in 1:n_free) {
+        pos <- n_fixed + fi  # position in medoid vector
+        old_med <- current_medoids[pos]
+        
+        best_cand <- old_med
+        best_cost <- current_cost
+        
+        # Pre-compute: for points whose closest is this medoid, 
+        # what's their second-best distance?
+        affected <- which(closest_idx == pos)
+        second_best <- if (length(affected) > 0 && k > 1) {
+          D_others <- D[affected, -pos, drop = FALSE]
+          rowMins(D_others)
+        } else numeric(0)
+        
+        # Vectorized: compute cost for all candidates at once
+        n_cands <- length(non_medoid_set)
+        if (n_cands == 0) next
+        
+        d_to_cands <- dmat[, non_medoid_set, drop = FALSE]  # n x n_cands
+        
+        # For unaffected points: pmin(closest_dist, d_to_cand) summed per candidate
+        unaffected <- which(closest_idx != pos)
+        n_unaff <- length(unaffected)
+        if (n_unaff > 0) {
+          d_unaff <- matrix(d_to_cands[unaffected, ], nrow = n_unaff, ncol = n_cands)
+          cd_unaff <- closest_dist[unaffected]
+          # pmin broadcasts vector across columns correctly
+          contrib_unaffected <- colSums(pmin(d_unaff, cd_unaff))
+        } else {
+          contrib_unaffected <- rep(0, n_cands)
+        }
+        
+        # For affected points: pmin(second_best, d_to_cand)
+        n_aff <- length(affected)
+        if (n_aff > 0) {
+          d_aff <- matrix(d_to_cands[affected, ], nrow = n_aff, ncol = n_cands)
+          contrib_affected <- colSums(pmin(d_aff, second_best))
+        } else {
+          contrib_affected <- rep(0, n_cands)
+        }
+        
+        costs <- contrib_unaffected + contrib_affected
+        
+        best_idx <- which.min(costs)
+        if (costs[best_idx] < best_cost) {
+          best_cost <- costs[best_idx]
+          best_cand <- non_medoid_set[best_idx]
+        }
+        
+        # Apply best swap for this position if improvement found
+        if (best_cand != old_med) {
+          # Update medoids
+          current_medoids[pos] <- best_cand
+          non_medoid_set <- setdiff(1:n, current_medoids)
+          
+          # Update distance matrix and closest info
+          D[, pos] <- dmat[, best_cand]
+          closest_idx <- max.col(-D, ties.method = "first")
+          closest_dist <- D[cbind(1:n, closest_idx)]
+          current_cost <- best_cost
+          improved <- TRUE
+        }
+      }
+      
+      if (!improved) break
+    }
+    
+    return(current_medoids)
+  }
+
+  ## Fast assignment of points to medoids (avoids full PAM call)
+  assign_to_medoids <- function(dmat, medoids) {
+    D <- dmat[, medoids, drop = FALSE]
+    max.col(-D, ties.method = "first")
+  }
+
+  ## Vectorized G-value calculation
+  calc_G_vectorized <- function(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e) {
+    SP.xdat <- ncol(IO.xdat)
+    
+    # Calculate fra1 matrix (rows=species, cols=clusters)
+    # Optimization: Use crossprod for frequency calculation instead of rowsum
+    # Construct indicator matrix for clusters (N.xdat x e)
+    C_mat <- matrix(0, nrow = N.xdat, ncol = e)
+    C_mat[cbind(seq_len(N.xdat), cl)] <- 1
+    # crossprod(A, B) computes t(A) %*% B -> (S x N) * (N x e) -> S x e
+    fra1_mat <- crossprod(IO.xdat, C_mat)
+    
+    # Expand vectors to matrices for element-wise operations
+    Nj_mat <- matrix(ci, nrow = SP.xdat, ncol = e, byrow = TRUE)
+    bom_vec <- as.vector(frq.xdat) / N.xdat
+    bom_mat <- matrix(bom_vec, nrow = SP.xdat, ncol = e, byrow = FALSE)
+    bim_mat <- 1 - bom_mat
+    
+    fra0_mat <- Nj_mat - fra1_mat
+    
+    # Calculate expected frequencies
+    bum_mat <- fra1_mat / (Nj_mat * bom_mat)
+    bam_mat <- fra0_mat / (Nj_mat * bim_mat)
+    
+    # Calculate Log-Likelihood terms (handling 0 * log(0) = 0)
+    term1 <- matrix(0, nrow = SP.xdat, ncol = e)
+    idx1 <- fra1_mat > 0 & bum_mat > 0 & !is.na(bum_mat)
+    term1[idx1] <- fra1_mat[idx1] * log(bum_mat[idx1])
+    
+    term2 <- matrix(0, nrow = SP.xdat, ncol = e)
+    idx2 <- fra0_mat > 0 & bam_mat > 0 & !is.na(bam_mat)
+    term2[idx2] <- fra0_mat[idx2] * log(bam_mat[idx2])
+    
+    DDD_vec <- rowSums(term1 + term2) * 2
+    
+    # Williams correction
+    w1 <- N.xdat * sum(1 / ci) - 1
+    w2 <- 6 * N.xdat * (e - 1)
+    willi_vec <- 1 + ((w1 * as.vector(w3)) / w2)
+    
+    # Return G-values as a column matrix
+    as.matrix(DDD_vec / willi_vec)
+  }
+
+  ## ------------ End Helpers ----------------------------------------------- ##
   ## ------------ Isopam call ----------------------------------------------- ##
 
   ## Initiate container for results
@@ -1363,6 +1333,25 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
   }
   summ <- as.data.frame(summ)
 
+  ## Build supervised description string
+  supervised <- NULL
+  if (!is.null(centers)) {
+    if (semi_supervised_search) {
+      supervised <- "cluster centroids partly provided, flexible number of additional clusters"
+    } else if (semi_supervised) {
+      supervised <- "cluster centroids partly provided, fixed number of additional clusters"
+    } else {
+      supervised <- "cluster centroids all provided"
+    }
+  }
+  if (!is.null(ind)) {
+    if (is.null(supervised)) {
+      supervised <- "indicator species provided"
+    } else {
+      supervised <- paste0(supervised, ", indicator species provided")
+    }
+  }
+
   ## ------------ Output -------------------------------------------------- ##
 
   if (ncol(ctb) == 1) {
@@ -1376,6 +1365,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
       dendro      = NULL,
       centers_usr = centers,
       ind_usr     = ind,
+      supervised  = supervised,
       indicators  = indlist,
       dat         = dat
     )
@@ -1391,6 +1381,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
       dendro      = dendro,
       centers_usr = centers,
       ind_usr     = ind,
+      supervised  = supervised,
       indicators  = indlist,
       dat         = dat
     )
@@ -1426,6 +1417,7 @@ isopam <-  function(dat, c.fix = FALSE, c.max = 6,
   invisible(OUT)
 }
 
+
 ## --------------------- S3 methods --------------------------------------- ##
 
 plot.isopam <- function(x, ...) {
@@ -1448,8 +1440,7 @@ summary.isopam <- function(object, ...) {
   # Retrieving info and building output
   nobj <- nrow(object$dat)
   ana <- object$analytics[-c(4, 6), , drop = FALSE]
-  centers <- object$centers_usr
-  ind <- object$ind_usr
+  supervised <- object$supervised
   r <- list(
     call      = object$call,
     clusters  = object$flat,
@@ -1461,14 +1452,8 @@ summary.isopam <- function(object, ...) {
   # Reporting
   cat("Call:", format(object$call), "\n")
   cat("Distance measure:", object$distance, "\n")
-  if (!is.null(centers) && is.null(ind)) {
-    cat("Supervised mode with medians suggested by user\n")
-  }
-  else if (!is.null(ind) && is.null(centers)) {
-    cat("Supervised mode with indicators suggested by user\n")
-  }
-  else if (!is.null(centers) & !is.null(ind)) {
-    cat("Supervised mode with medians and indicators suggested by user\n")
+  if (!is.null(supervised)) {
+    cat("Supervised:", supervised, "\n")
   }
 
   if (is.null(object$hier)) {
@@ -1489,20 +1474,13 @@ print.isopam <- function(x, ...) {
 
   # Retrieving info and building output
   nobj <- nrow(x$dat)
-  centers <- x$centers_usr
-  ind <- x$ind_usr
+  supervised <- x$supervised
 
   # Reporting
   cat("Call:", format(x$call), "\n")
   cat("Distance measure:", x$distance, "\n")
-  if (!is.null(centers) && is.null(ind)) {
-    cat("Supervised mode with medians suggested by user\n")
-  }  
-  else if (!is.null(ind) && is.null(centers)) {
-    cat("Supervised mode with indicators suggested by user\n")
-  }  
-  else if (!is.null(centers) & !is.null(ind)) {
-    cat("Supervised mode with medians and indicators suggested by user\n")
+  if (!is.null(supervised)) {
+    cat("Supervised:", supervised, "\n")
   }
 
   if (is.null(x$hier)) {
