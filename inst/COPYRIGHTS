@@ -1,0 +1,9 @@
+COPYRIGHTS
+
+Files: src/pam.cpp, src/pam.h
+Copyright: ELKI project (http://elki-project.github.io/)
+C++ port: Xun Li <lixun910@gmail.com>, GeoDa (https://github.com/geodacenter/geoda)
+License: AGPL-3 (https://github.com/elki-project/elki/blob/master/LICENSE.md)
+
+Minor modifications for isopam include warning fixes and reduction to
+the FastPAM algorithm only.

@@ -319,7 +319,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
       ## Use future.packages to explicitly load dependencies in workers
       out.array <- suppressWarnings(array(future.apply::future_sapply(k.min:k.max, 
                          future.seed = TRUE, 
-                         future.packages = c("vegan", "cluster", "fastkmedoids"),
+                         future.packages = c("vegan", "cluster"),
                          function(b) {
 
           ## Isomap
@@ -391,8 +391,8 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
                     ci <- cl.iso$clusinfo[, 1]
                   }
                 } else {
-                  cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
-                  cl <- cl.iso@assignment
+                  cl.iso <- cpp_fastpam(isodiss_vector, k = e, n = N.xdat)
+                  cl <- cl.iso$assignment
                   ci <- tabulate(cl, nbins = e)
                 }
 
@@ -521,8 +521,8 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
                     ci <- cl.iso$clusinfo[, 1]
                   }
                 } else {
-                  cl.iso <- fastkmedoids::fastpam(isodiss_vector, k = e, n = N.xdat)
-                  cl <- cl.iso@assignment
+                  cl.iso <- cpp_fastpam(isodiss_vector, k = e, n = N.xdat)
+                  cl <- cl.iso$assignment
                   ci <- tabulate(cl, nbins = e)
                 }
                 

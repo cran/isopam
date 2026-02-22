@@ -3,9 +3,12 @@
      export(isotab)
      export(clusters)
 
+## Dynamic library
+    useDynLib(isopam, .registration = TRUE)
+
 ## Imports
     importFrom("cluster", "daisy", "pam")
-    importFrom("fastkmedoids", "fastpam")
+    importFrom("Rcpp", "sourceCpp")
     importFrom("future", "plan")
     importFrom("future.apply", "future_sapply")
     importFrom("ggplot2", "aes", "coord_cartesian", "element_blank", "element_text", 

@@ -1,7 +1,7 @@
 Package: isopam
 Type: Package
 Title: Clustering of Sites with Species Data
-Version: 3.3
+Version: 3.4
 Authors@R: c(person("Sebastian", "Schmidtlein", role = c("aut", "cre"),
                    email = "schmidtlein@kit.edu",
                    comment = c(ORCID = "0000-0003-1888-1865")),
@@ -9,18 +9,19 @@ Authors@R: c(person("Sebastian", "Schmidtlein", role = c("aut", "cre"),
             person("Robin", "Pfannendoerfer", role = "aut"),
             person("Lubomir", "Tichy", role = "ctb"))
 Maintainer: Sebastian Schmidtlein <schmidtlein@kit.edu>
-Imports: vegan, cluster, fastkmedoids, future, future.apply, methods,
-        ps, grDevices, graphics, stats, utils, proxy, ggplot2, tibble
+Imports: vegan, cluster, Rcpp, future, future.apply, methods, ps,
+        grDevices, graphics, stats, utils, proxy, ggplot2, tibble
+LinkingTo: Rcpp
 Description: Clustering algorithm developed for use with plot inventories of species. It groups plots by subsets of diagnostic species rather than overall species composition. There is an unsupervised and a supervised mode, the latter accepting suggestions for species with greater weight and cluster medoids. 
 License: GPL (>= 2)
 Encoding: UTF-8
-NeedsCompilation: no
-Packaged: 2025-12-20 23:37:20 UTC; ses
+NeedsCompilation: yes
+Packaged: 2026-02-22 22:17:37 UTC; ses
 Author: Sebastian Schmidtlein [aut, cre] (ORCID:
     <https://orcid.org/0000-0003-1888-1865>),
   Jason Collison [aut],
   Robin Pfannendoerfer [aut],
   Lubomir Tichy [ctb]
 Repository: CRAN
-Date/Publication: 2025-12-21 00:00:02 UTC
+Date/Publication: 2026-02-22 22:50:02 UTC
 Depends: R (>= 3.5.0)
