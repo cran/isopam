@@ -205,7 +205,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
   
   core <- function(xdat) {
 
-    IO.xdat <- ifelse(xdat > 0, 1L, 0L)
+    IO.xdat <- ifelse(xdat > 0, 1, 0)
 
     ## Some useful descriptors
     N.xdat <- nrow(xdat)                         ## Total number of plots
@@ -214,6 +214,9 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
 
     ## For Williams` correction
     w3 <- N.xdat *((1 / frq.xdat) +(1 /(N.xdat - frq.xdat))) - 1
+
+    ## Lookup table and per-species constants for calc_G_vectorized()
+    G.pre <- G_precompute(N.xdat, frq.xdat)
 
     ## In case of predefined indicators: which columns?
     if (usr_ind) {
@@ -276,6 +279,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
     if (c.max < 2) stop("c.max < 2")
 
     # Criteria for parallel processing (subject to further experiments)
+    knn.xdat <- isomap_prep(dst.xdat)
     fut <- TRUE # Stays TRUE if parallel processing seems to be possible
     rg.k <- k.max - k.min
     # Check current memory limit
@@ -323,7 +327,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
                          function(b) {
 
           ## Isomap
-          suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
+          isom <- isomap_fast(knn.xdat, ndim = d.max, k = b)
 
           ## Fixing the maximum of dimensions considered when calculating
           ## the distance matrix for the isomap space
@@ -399,7 +403,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
                 ## ----------- Start vectorized calculation --------------- ##
 
                 # Calculate G-values using the helper function
-                gt <- calc_G_vectorized(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e)
+                gt <- calc_G_vectorized(IO.xdat, cl, ci, G.pre, N.xdat, w3, e)
 
                 ## Standardization (Botta-Dukat et al. 2005)
                 gt.ex <- e - 1                 ## Expected G
@@ -453,7 +457,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
       out.array <- suppressWarnings(array(sapply(k.min:k.max, function(b) {
 
           ## Isomap
-          suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = b))
+          isom <- isomap_fast(knn.xdat, ndim = d.max, k = b)
 
           ## Fixing the maximum of dimensions considered when calculating
           ## the distance matrix for the isomap space
@@ -529,7 +533,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
                 ## ----------- Start vectorized calculation --------------- ##
 
                 # Calculate G-values using the helper function
-                gt <- calc_G_vectorized(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e)
+                gt <- calc_G_vectorized(IO.xdat, cl, ci, G.pre, N.xdat, w3, e)
 
                 ## Standardization (Botta-Dukat et al. 2005)
                 gt.ex <- e - 1                 ## Expected G
@@ -623,7 +627,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
 
       ## ----------- Final run ---------------------------------------------- ##
 
-      suppressMessages(isom <- isomap(dst.xdat, ndim = d.max, k = mk))
+      isom <- isomap_fast(knn.xdat, ndim = d.max, k = mk)
       d.iso <- daisy(isom$points[, 1:md], metric = "euclidean", stand = TRUE)
 
       if (!is.null(centers)) {
@@ -660,7 +664,7 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
 
       # Calculate G-values using the vectorized helper function
       # CLS = cluster assignments, CLI = cluster sizes, mc = number of clusters
-      g.1 <- calc_G_vectorized(IO.xdat, CLS, CLI, frq.xdat, N.xdat, w3, mc)
+      g.1 <- calc_G_vectorized(IO.xdat, CLS, CLI, G.pre, N.xdat, w3, mc)
 
       ## Standardization (Botta-Dukat et al. 2005)
       gt.ex <- mc - 1                       ## Expected G
@@ -893,6 +897,59 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
   ## ------------ End dendro function -------------------------------------- ##
   ##------------------ Helpers --------------------------------------------- ##
 
+  ## Neighbour distances sorted once per partition level, reused for every k
+  isomap_prep <- function(dst) {
+    D <- as.matrix(dst)
+    diag(D) <- Inf
+    list(D = D, kth = apply(D, 2, sort))
+  }
+
+  ## Isomap with the same result as vegan::isomap(), but geodesic distances
+  ## come from igraph (sparse Dijkstra) instead of vegan::stepacross
+  isomap_fast <- function(prep, ndim, k) {
+    D <- prep$D
+    n <- nrow(D)
+    ## Same neighbourhood rule as vegan (ties at the k-th neighbour included)
+    A <- D <= matrix(prep$kth[k, ], n, n, byrow = TRUE)
+    A <- (A | t(A)) & lower.tri(A)
+    idx <- which(A, arr.ind = TRUE)
+    g <- igraph::make_empty_graph(n, directed = FALSE)
+    g <- igraph::add_edges(g, c(t(idx)), weight = D[idx])
+    G <- igraph::distances(g)
+    if (any(is.infinite(G))) stop("data are fragmented")
+    dimnames(G) <- dimnames(D)
+    if (n >= partial_min_n) {
+      out <- partial_mds(G, ndim)
+      if (!is.null(out)) return(out)
+    }
+    vegan::wcmdscale(stats::as.dist(G), k = ndim, eig = TRUE)
+  }
+
+  ## Smallest N for which a partial eigen decomposition beats a full one
+  partial_min_n <- 100
+
+  ## Classical scaling with only the leading ndim axes (ARPACK). Returns NULL
+  ## if the solver does not converge, so the caller can fall back to wcmdscale.
+  partial_mds <- function(G, ndim) {
+    n <- nrow(G)
+    G2 <- G * G
+    rm <- rowMeans(G2)
+    B <- -0.5 * (G2 - rm - rep(rm, each = n) + mean(rm))
+    ## Fixed start vector: keeps the user's RNG state untouched
+    e <- tryCatch(
+      RSpectra::eigs_sym(B, k = ndim, which = "LA",
+                         opts = list(initv = sin(seq_len(n)))),
+      error = function(z) NULL, warning = function(z) NULL)
+    if (is.null(e) || length(e$values) < ndim) return(NULL)
+    ZERO <- sqrt(.Machine$double.eps)
+    keep <- abs(e$values) > max(ZERO, ZERO * e$values[1L])
+    pos <- e$values > ZERO
+    if (!any(pos)) return(NULL)
+    points <- sweep(e$vectors[, pos, drop = FALSE], 2, sqrt(e$values[pos]), "*")
+    rownames(points) <- rownames(G)
+    list(points = points, eig = e$values[keep])
+  }
+
   ## Helper function to select additional medoids (deterministic, distance-based)
   select_additional_medoids <- function(dmat, fixed_centers, n_additional) {
     if (n_additional <= 0) return(integer(0))
@@ -1026,8 +1083,17 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
     max.col(-D, ties.method = "first")
   }
 
-  ## Vectorized G-value calculation
-  calc_G_vectorized <- function(IO.xdat, cl, ci, frq.xdat, N.xdat, w3, e) {
+  ## Lookup table of x * log(x) for x = 0..N and the per-species terms of
+  ## G that do not depend on the partition
+  G_precompute <- function(N, frq) {
+    frq <- as.vector(frq)
+    xlx <- c(0, (1:N) * log(1:N))
+    list(xlx = xlx, const = N * log(N) - xlx[frq + 1] - xlx[N - frq + 1])
+  }
+
+  ## Vectorized G-value calculation. G = 2 * sum(obs * log(obs / expected))
+  ## is rearranged so that only table lookups are needed (no logarithms).
+  calc_G_vectorized <- function(IO.xdat, cl, ci, G.pre, N.xdat, w3, e) {
     SP.xdat <- ncol(IO.xdat)
     
     # Calculate fra1 matrix (rows=species, cols=clusters)
@@ -1037,29 +1103,12 @@ isopam <-  function(dat, c.fix = NULL, c.max = NULL,
     C_mat[cbind(seq_len(N.xdat), cl)] <- 1
     # crossprod(A, B) computes t(A) %*% B -> (S x N) * (N x e) -> S x e
     fra1_mat <- crossprod(IO.xdat, C_mat)
+    fra0_mat <- matrix(ci, nrow = SP.xdat, ncol = e, byrow = TRUE) - fra1_mat
     
-    # Expand vectors to matrices for element-wise operations
-    Nj_mat <- matrix(ci, nrow = SP.xdat, ncol = e, byrow = TRUE)
-    bom_vec <- as.vector(frq.xdat) / N.xdat
-    bom_mat <- matrix(bom_vec, nrow = SP.xdat, ncol = e, byrow = FALSE)
-    bim_mat <- 1 - bom_mat
-    
-    fra0_mat <- Nj_mat - fra1_mat
-    
-    # Calculate expected frequencies
-    bum_mat <- fra1_mat / (Nj_mat * bom_mat)
-    bam_mat <- fra0_mat / (Nj_mat * bim_mat)
-    
-    # Calculate Log-Likelihood terms (handling 0 * log(0) = 0)
-    term1 <- matrix(0, nrow = SP.xdat, ncol = e)
-    idx1 <- fra1_mat > 0 & bum_mat > 0 & !is.na(bum_mat)
-    term1[idx1] <- fra1_mat[idx1] * log(bum_mat[idx1])
-    
-    term2 <- matrix(0, nrow = SP.xdat, ncol = e)
-    idx2 <- fra0_mat > 0 & bam_mat > 0 & !is.na(bam_mat)
-    term2[idx2] <- fra0_mat[idx2] * log(bam_mat[idx2])
-    
-    DDD_vec <- rowSums(term1 + term2) * 2
+    xlx <- G.pre$xlx
+    DDD_vec <- 2 * (rowSums(matrix(xlx[fra1_mat + 1] + xlx[fra0_mat + 1],
+                                   nrow = SP.xdat)) -
+                    sum(xlx[ci + 1]) + G.pre$const)
     
     # Williams correction
     w1 <- N.xdat * sum(1 / ci) - 1

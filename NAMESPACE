@@ -13,13 +13,15 @@
                "guides", "labs", "scale_fill_manual", "theme", "theme_minimal")
     importFrom("grDevices", "bmp", "dev.off")
     importFrom("graphics", "identify")
+    importFrom("igraph", "make_empty_graph", "add_edges", "distances")
+    importFrom("RSpectra", "eigs_sym")
     importFrom("methods", "is")
     importFrom("proxy", "dist", "pr_DB")
     importFrom("ps", "ps_system_memory")
     importFrom("stats", "aggregate", "as.dendrogram", "as.dist", "dhyper", 
                "na.omit", "phyper", "setNames", "var")
     importFrom("utils", "combn", "object.size", "write.table")
-    importFrom("vegan", "distconnected", "isomap", "vegdist")
+    importFrom("vegan", "distconnected", "wcmdscale", "vegdist")
 
 ## S3 Methods
     S3method(clusters, isopam)
